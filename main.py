@@ -39,7 +39,7 @@ from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from ui import HUDOverlay
 from punch import DURATION as PUNCH_DURATION
-from punch import draw_punch
+from punch import PunchImpact, draw_punch
 from bench import Bench
 from box import Box
 from road import Road
@@ -883,6 +883,7 @@ class Game:
 
         self.particles = []
         self.slashes = []
+        self.impacts = []
         self.last_attack_id = 0
         self.dust_timer = 0.0
         self.fps = 0.0
@@ -921,6 +922,7 @@ class Game:
         self.clear_bonus = 0
         self.particles = []
         self.slashes = []
+        self.impacts = []
         self.last_attack_id = 0
         self.dust_timer = 0.0
         self.smoke_time = 0.0
@@ -979,6 +981,7 @@ class Game:
         if self.smoke:
             self._smoke_input(dt)
 
+        self._prev_girl_x = self.girl.x
         self.girl.update(dt, self.world.platforms)
 
         # 카메라
@@ -1068,10 +1071,13 @@ class Game:
                            14, 240, 0.6, 4, gravity=300)
 
     def _check_checkpoints(self):
+        # 대쉬로 한 프레임에 많이 움직여도 놓치지 않도록, 이전 위치부터 현재 위치까지 확인한다.
+        lo = min(self._prev_girl_x, self.girl.x)
+        hi = max(self._prev_girl_x, self.girl.x)
         for cp in self.world.checkpoints:
             if cp.active:
                 continue
-            if abs(self.girl.x - cp.x) < 46 and self.girl.y <= cp.y + CHECKPOINT_REACH_Y:
+            if lo - 46 <= cp.x <= hi + 46 and self.girl.y <= cp.y + CHECKPOINT_REACH_Y:
                 cp.active = True
                 self.checkpoint = (cp.x, cp.y + 2)
                 self.girl.heal(1)
@@ -1101,6 +1107,9 @@ class Game:
             if self.girl.dash_timer > 0.0:
                 # 대쉬 중에 닿은 적은 바로 사망한다.
                 enemy.kill()
+                self.impacts.append(PunchImpact(
+                    (self.girl.focus_x() + enemy.x) * 0.5,
+                    enemy.y + enemy.height * 0.5, self.girl.facing))
                 self.score += 100
                 self.shake = max(self.shake, 5.0)
                 color = (160, 120, 255) if enemy.kind == "bird" else (110, 75, 190)
@@ -1155,6 +1164,9 @@ class Game:
 
         for slash in self.slashes:
             slash.update(dt)
+        for impact in self.impacts:
+            impact.update(dt)
+        self.impacts = [i for i in self.impacts if i.alive]
         self.slashes = [s for s in self.slashes if s.life > 0]
 
         if self.shake > 0.0:
@@ -1254,6 +1266,8 @@ class Game:
             particle.draw(cam, shake)
         for slash in self.slashes:
             slash.draw(cam, shake)
+        for impact in self.impacts:
+            impact.draw(cam, shake)
 
     def _draw_hud(self):
         a = art()
@@ -1268,7 +1282,9 @@ class Game:
                        "x %02d" % self.coin_count, (240, 220, 150))
         minutes = int(self.play_time) // 60
         seconds = int(self.play_time) % 60
-        self.text.draw(20, WIDTH * 0.5, HEIGHT - 56,
+        self.text.draw(18, WIDTH * 0.5, HEIGHT - 52,
+                       "STAGE %d" % self.stage, (200, 210, 235), align="center")
+        self.text.draw(20, WIDTH * 0.5, HEIGHT - 80,
                        "TIME %02d:%02d" % (minutes, seconds),
                        (170, 190, 220), align="center")
 

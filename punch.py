@@ -32,6 +32,11 @@ def _load():
 
 def draw_punch(x, y, facing, elapsed):
     """이펙트 한 프레임을 그린다. (x, y) 는 캐릭터 발밑 중심(화면 좌표)."""
+    draw_at(x + facing * OFFSET_X + SHIFT_X, y + OFFSET_Y + SHIFT_Y, facing, elapsed)
+
+
+def draw_at(sx, sy, facing, elapsed):
+    """이펙트 한 프레임을 화면 좌표 (sx, sy) 의 중심에 그린다."""
     if elapsed < 0.0 or elapsed >= DURATION:
         return
     sheet = _load()
@@ -47,5 +52,25 @@ def draw_punch(x, y, facing, elapsed):
     flip = "h" if facing < 0 else ""
     sheet.clip_composite_draw(
         left, bottom, cell_w, cell_h, 0.0, flip,
-        x + facing * OFFSET_X + SHIFT_X, y + OFFSET_Y + SHIFT_Y, width, height,
+        sx, sy, width, height,
     )
+
+
+class PunchImpact:
+    """적과 부딪힌 자리에 한 번 재생하는 이펙트(world 좌표)."""
+
+    def __init__(self, x, y, facing):
+        self.x = x
+        self.y = y
+        self.facing = facing
+        self.elapsed = 0.0
+
+    @property
+    def alive(self):
+        return self.elapsed < DURATION
+
+    def update(self, dt):
+        self.elapsed += dt
+
+    def draw(self, camera_x, shake_x=0.0):
+        draw_at(self.x - camera_x + shake_x, self.y, self.facing, self.elapsed)
