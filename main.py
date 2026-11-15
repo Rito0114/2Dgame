@@ -42,6 +42,7 @@ FPS = 60
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BG_FILE = os.path.join(BASE_DIR, "background.png")
+BG_OVERLAY_FILE = os.path.join(BASE_DIR, "background_black.png")
 ROAD_FILE = os.path.join(BASE_DIR, "road.png")
 FENCE_FILE = os.path.join(BASE_DIR, "fence2.png")
 
@@ -546,7 +547,7 @@ class World:
         self.checkpoints = []
         self.goal_x = 6720
         self.goal_y = GROUND
-        self.background = Background(BG_FILE)
+        self.background = Background(BG_FILE, BG_OVERLAY_FILE)
         self.road = Road(ROAD_FILE)
         self.fence = Fence(FENCE_FILE)
         self.ground_spans = []
