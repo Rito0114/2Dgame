@@ -68,10 +68,10 @@ RETIRE2_PAD = (29, 29, 32, 26, 26, 56, 57, 56, 54, 51)
 # 달리기 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px). 발이 땅에 붙도록 보정한다.
 RUN_PAD = (9, 13, 8, 8, 8, 11, 10, 9, 9, 8, 9, 13, 8, 8, 8, 12, 11, 10, 10, 9)
 
-LEFT_KEYS = {sdl2.SDLK_a, sdl2.SDLK_LEFT}
-RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
-JUMP_KEYS = {sdl2.SDLK_SPACE, sdl2.SDLK_w, sdl2.SDLK_UP}
-DROP_KEYS = {sdl2.SDLK_s, sdl2.SDLK_DOWN}
+LEFT_KEYS = {sdl2.SDLK_LEFT}
+RIGHT_KEYS = {sdl2.SDLK_RIGHT}
+JUMP_KEYS = {sdl2.SDLK_SPACE}
+DROP_KEYS = {sdl2.SDLK_DOWN}
 ATTACK_KEYS = {sdl2.SDLK_j, sdl2.SDLK_x, sdl2.SDLK_k, sdl2.SDLK_LCTRL}
 DASH_KEYS = {sdl2.SDLK_q}
 
@@ -183,6 +183,7 @@ class Girl:
             elif key in JUMP_KEYS:
                 self.jump_held = True
                 self.jump_buffer = self.JUMP_BUFFER
+                # 아래 화살표를 누른 채 스페이스를 누르면 단방향 발판을 통과해 떨어진다.
                 if "down" in self.keys:
                     self.drop_request = True
             elif key in DASH_KEYS:

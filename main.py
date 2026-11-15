@@ -1469,20 +1469,26 @@ def main():
             if ev.type == sdl2.SDL_QUIT:
                 running = False
             elif ev.type == sdl2.SDL_KEYDOWN:
-                if ev.key == sdl2.SDLK_ESCAPE:
+                if game.state in ("clear", "gameover"):
+                    # 스테이지 종료 화면에서는 R 키만 받는다.
+                    if ev.key == sdl2.SDLK_r:
+                        if game.state == "clear":
+                            game.next_stage()
+                        else:
+                            game.start()
+                elif ev.key == sdl2.SDLK_ESCAPE:
                     running = False
                 elif ev.key == sdl2.SDLK_p and game.state in ("play", "paused"):
                     game.toggle_pause()
                 elif game.state == "play":
                     game.girl.handle_event(ev)
-                elif game.state == "clear" and ev.key == sdl2.SDLK_r:
-                    game.next_stage()
-                elif game.state in ("title", "clear", "gameover"):
+                elif game.state == "title":
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
                                   sdl2.SDLK_r):
                         game.start()
             elif ev.type == sdl2.SDL_KEYUP:
-                game.girl.handle_event(ev)
+                if game.state == "play":
+                    game.girl.handle_event(ev)
             elif (ev.type == sdl2.SDL_MOUSEBUTTONDOWN
                   and ev.button == sdl2.SDL_BUTTON_LEFT
                   and game.state == "play"):
