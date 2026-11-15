@@ -13,6 +13,12 @@ SPEC = replace(
     background="background_stage2.png",
     time_bonus=9000,
     bgm="stage2_bgm.mp3",
+    cats=(
+        (900, 60, 1450),
+        (10500, 9960, 11080),
+        (16000, 15460, 16680),
+        (18700, 18180, 19280),
+    ),
     road="road_stage2.png",
     fence="fence_stage2.png",
     bench_file="bench_stage2.png",

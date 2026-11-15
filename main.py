@@ -28,6 +28,8 @@ import sdl2
 from background import Background
 from bear import ATTACK_DURATION as BEAR_ATTACK_DURATION
 from bear import BEAR_HEIGHT, BEAR_WIDTH, draw_bear
+from cat import ATTACK_DURATION as CAT_ATTACK_DURATION
+from cat import CAT_HEIGHT, CAT_WIDTH, draw_attack, draw_retire, draw_walk
 from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
                   BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME, FALL_TIME, draw_bird)
 from fence import Fence
@@ -413,9 +415,9 @@ class Checkpoint:
 
 
 class Enemy:
-    WIDTH = {"bear": BEAR_WIDTH, "bird": BIRD_WIDTH}
-    HEIGHT = {"bear": BEAR_HEIGHT, "bird": BIRD_HEIGHT}
-    ATTACK_DURATION = {"bear": BEAR_ATTACK_DURATION, "bird": BIRD_ATTACK_DURATION}
+    WIDTH = {"bear": BEAR_WIDTH, "bird": BIRD_WIDTH, "cat": CAT_WIDTH}
+    HEIGHT = {"bear": BEAR_HEIGHT, "bird": BIRD_HEIGHT, "cat": CAT_HEIGHT}
+    ATTACK_DURATION = {"bear": BEAR_ATTACK_DURATION, "bird": BIRD_ATTACK_DURATION, "cat": CAT_ATTACK_DURATION}
 
     def __init__(self, kind, x, y, left, right, phase=0.0):
         self.kind = kind
@@ -476,7 +478,7 @@ class Enemy:
         self.attack_hold = max(0.0, self.attack_hold - dt)
         if self.attack_t is not None:
             self.attack_t += dt
-        if self.kind == "bear":
+        if self.kind in ("bear", "cat"):
             self.x += self.vx * dt
             half = self.width * 0.5
             if self.x < self.left + half:
@@ -504,7 +506,14 @@ class Enemy:
             state, t = "attack", self.attack_t
         else:
             state, t = "walk", self.anim_time
-        if self.kind == "bear":
+        if self.kind == "cat":
+            if state == "retire":
+                draw_retire(self.x, self.y, self.facing, t, camera_x, shake_x)
+            elif state == "attack":
+                draw_attack(self.x, self.y, self.facing, t, camera_x, shake_x)
+            else:
+                draw_walk(self.x, self.y, self.facing, t, camera_x, shake_x)
+        elif self.kind == "bear":
             draw_bear(self.x, self.y, self.facing, state, t, camera_x, shake_x)
         else:
             draw_bird(self.x, self.y, self.facing,
@@ -699,6 +708,10 @@ class World:
         # 벤치/상자 윗면 위의 코인과 회복 아이템
         self._place_pickups()
 
+        for x, left, right in spec.cats:
+            self.enemies.append(
+                Enemy("cat", x, STAND_Y, left, right, random.random() * math.tau)
+            )
         for x, left, right in spec.ground_bears:
             self._add_bear(x, STAND_Y, left, right)
         for _ in range(spec.surface_bears):
