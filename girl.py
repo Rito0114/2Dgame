@@ -12,6 +12,9 @@ import os
 import pico2d
 import sdl2
 
+from dash import DURATION as DASH_DURATION
+from dash import LAST_FRAME_ELAPSED, draw_dash, lead_offset
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- 스프라이트 시트 정보 -------------------------------------------------
@@ -70,6 +73,7 @@ RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
 JUMP_KEYS = {sdl2.SDLK_SPACE, sdl2.SDLK_w, sdl2.SDLK_UP}
 DROP_KEYS = {sdl2.SDLK_s, sdl2.SDLK_DOWN}
 ATTACK_KEYS = {sdl2.SDLK_j, sdl2.SDLK_x, sdl2.SDLK_k, sdl2.SDLK_LCTRL}
+DASH_KEYS = {sdl2.SDLK_q}
 
 _sheet_cache = {}
 
@@ -113,6 +117,10 @@ class Girl:
     GRAVITY = 2300.0
     JUMP_V = 880.0
     DROP_SPEED = 260.0  # 아래 점프를 시작할 때 주는 하강 속도
+    DASH_SPEED = 900.0  # 대쉬 속도
+    DASH_TIME = DASH_DURATION  # 대쉬 지속 시간(잔상 프레임 17개와 같다)
+    DASH_END_BACK = 200.0  # 대쉬가 끝난 뒤 마지막 위치에서 왼쪽으로 옮기는 거리(px)
+    DASH_COOLDOWN = 40.0  # 대쉬 재사용 대기 시간(초)
     MAX_FALL = 1400.0
     COYOTE = 0.10
     JUMP_BUFFER = 0.14
@@ -142,6 +150,8 @@ class Girl:
         self.attack_timer = 0.0
         self.attack_elapsed = 0.0
         self.attack_id = 0
+        self.dash_timer = 0.0
+        self.dash_cooldown = 0.0
 
         # 이벤트(먼지/사운드용)
         self.just_jumped = False
@@ -173,6 +183,8 @@ class Girl:
                 self.jump_buffer = self.JUMP_BUFFER
                 if "down" in self.keys:
                     self.drop_request = True
+            elif key in DASH_KEYS:
+                self.request_dash()
             elif key in ATTACK_KEYS:
                 self.request_attack()
         elif event.type == sdl2.SDL_KEYUP:
@@ -200,6 +212,16 @@ class Girl:
         self.attack_elapsed = 0.0
         self.attack_id += 1
 
+    def request_dash(self):
+        if self.state in ("retire", "hit") or self.hit_stun > 0:
+            return
+        if self.dash_timer > 0 or self.dash_cooldown > 0:
+            return
+        self.dash_timer = self.DASH_TIME
+        self.dash_cooldown = self.DASH_COOLDOWN
+        self.attack_timer = 0.0
+        self.anim_time = 0.0
+
     def request_jump(self):
         if self.state == "retire":
             return
@@ -224,8 +246,15 @@ class Girl:
     def top(self):
         return self.y + self.HITBOX_H
 
+    def focus_x(self):
+        """카메라와 피격 판정의 기준 x. 대쉬 중에는 가장 오른쪽(앞쪽) 픽셀이다."""
+        if self.dash_timer > 0.0:
+            return self.x + lead_offset(self.anim_time, self.facing)
+        return self.x
+
     def rect(self):
-        return self.left, self.bottom, self.HITBOX_W, self.HITBOX_H
+        return (self.focus_x() - self.HITBOX_W * 0.5, self.bottom,
+                self.HITBOX_W, self.HITBOX_H)
 
     def _overlaps(self, platform):
         return (
@@ -251,12 +280,14 @@ class Girl:
         self._set_state("jump")
 
     def take_hit(self, source_x):
-        if self.state == "retire" or self.invuln > 0:
+        # 대쉬 중에는 무적이다.
+        if self.state == "retire" or self.invuln > 0 or self.dash_timer > 0:
             return False
         self.hp -= 1
         self.invuln = 1.25
         self.hit_stun = self.HIT_TIME
         self.attack_timer = 0.0
+        self.dash_timer = 0.0
         self.attack_elapsed = 0.0
         self.on_ground = False
         self.jump_buffer = 0.0
@@ -277,6 +308,7 @@ class Girl:
         self.on_ground = False
         self.attack_timer = 0.0
         self.hit_stun = 0.0
+        self.dash_timer = 0.0
         self.anim_time = 0.0
         self.state = "retire"
 
@@ -294,6 +326,7 @@ class Girl:
         self.invuln = 1.6
         self.hit_stun = 0.0
         self.attack_timer = 0.0
+        self.dash_timer = 0.0
         self.jump_buffer = 0.0
         self.jump_held = False
         self.anim_time = 0.0
@@ -337,6 +370,12 @@ class Girl:
         self.invuln = max(0.0, self.invuln - dt)
         self.jump_buffer = max(0.0, self.jump_buffer - dt)
         self.hit_stun = max(0.0, self.hit_stun - dt)
+        was_dashing = self.dash_timer > 0.0
+        self.dash_timer = max(0.0, self.dash_timer - dt)
+        if was_dashing and self.dash_timer <= 0.0:
+            # 대쉬가 끝나면 마지막 프레임의 가장 오른쪽 픽셀 위치로 옮겨 놓는다.
+            self.x += lead_offset(LAST_FRAME_ELAPSED, self.facing) - self.DASH_END_BACK * self.facing
+        self.dash_cooldown = max(0.0, self.dash_cooldown - dt)
 
         attacking = self.attack_timer > 0.0
         if attacking:
@@ -353,7 +392,9 @@ class Girl:
         elif "right" in self.keys and "left" not in self.keys:
             direction = 1
 
-        if self.hit_stun > 0.0:
+        if self.dash_timer > 0.0:
+            self.vx = self.facing * self.DASH_SPEED
+        elif self.hit_stun > 0.0:
             self.vx = self._approach(self.vx, 0.0, 1800.0 * dt)
         else:
             if direction:
@@ -456,7 +497,9 @@ class Girl:
         self.x = max(self.limit_left, min(self.limit_right, self.x))
 
         # --- 애니메이션 상태 -------------------------------------------
-        if self.hit_stun > 0.0:
+        if self.dash_timer > 0.0:
+            desired = "dash"
+        elif self.hit_stun > 0.0:
             desired = "hit"
         elif self.attack_timer > 0.0:
             desired = "attack"
@@ -513,6 +556,9 @@ class Girl:
         return "idle2"
 
     def draw(self, camera_x, shake_x=0.0, time=0.0):
+        if self.state == "dash":
+            draw_dash(self.x - camera_x + shake_x, self.y, self.facing, self.anim_time)
+            return
         # 피격 직후에는 깜빡인다.
         if self.invuln > 0.0 and self.state != "retire" and int(self.invuln * 18) % 2 == 0:
             return

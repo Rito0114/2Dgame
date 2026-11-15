@@ -31,6 +31,7 @@ from bear import BEAR_HEIGHT, BEAR_WIDTH, draw_bear
 from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
                   BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME, FALL_TIME, draw_bird)
 from fence import Fence
+from dash import SkillBackground
 from girl import Girl
 from lamp import Lamp
 from punch import DURATION as PUNCH_DURATION
@@ -946,6 +947,7 @@ class Game:
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = WORLD_W - 24
+        self.skill_bg = SkillBackground()
 
         self.state = "title"
         self.time = 0.0
@@ -1021,6 +1023,7 @@ class Game:
         dt = min(dt, 0.05)
         self.time += dt
         self._update_motes(dt)
+        self.skill_bg.update(dt, self.state == "play" and self.girl.state == "dash")
 
         if self.state == "title":
             if self.smoke and self.time > 0.7:
@@ -1055,7 +1058,7 @@ class Game:
         self.girl.update(dt, self.world.platforms)
 
         # 카메라
-        target = clamp(self.girl.x - WIDTH * 0.42, 0, WORLD_W - WIDTH)
+        target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0, WORLD_W - WIDTH)
         self.camera += (target - self.camera) * min(1.0, dt * 7.0)
 
         # 착지/점프/달리기 먼지
@@ -1170,6 +1173,15 @@ class Game:
                 continue
             ex, ey, ew, eh = enemy.rect()
             if not overlaps(gx, gy, gw, gh, ex, ey, ew, eh):
+                continue
+            if self.girl.dash_timer > 0.0:
+                # 대쉬 중에 닿은 적은 바로 사망한다.
+                enemy.kill()
+                self.score += 100
+                self.shake = max(self.shake, 5.0)
+                color = (160, 120, 255) if enemy.kind == "bird" else (110, 75, 190)
+                self.burst(enemy.x, enemy.y + enemy.height * 0.5, color,
+                           14, 300, 0.55, 4)
                 continue
             stomp = (
                 self.girl.vy < -80.0
@@ -1308,6 +1320,9 @@ class Game:
 
         for enemy in self.world.enemies:
             enemy.draw(cam, self.time, shake)
+
+        # 스킬 배경: 다른 레이어 위, 캐릭터 바로 아래
+        self.skill_bg.draw(art(), WIDTH, HEIGHT)
 
         self.girl.draw(cam, shake, self.time)
 
