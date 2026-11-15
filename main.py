@@ -29,6 +29,9 @@ from background import Background
 from bear import ATTACK_DURATION as BEAR_ATTACK_DURATION
 from bear import BEAR_HEIGHT, BEAR_WIDTH, draw_bear
 from cat import ATTACK_DURATION as CAT_ATTACK_DURATION
+from cat import FIRE_TIME as CAT_FIRE_TIME
+from cat import SHOT_INTERVAL as CAT_SHOT_INTERVAL
+from cat import Bullet, muzzle
 from cat import CAT_HEIGHT, CAT_WIDTH, draw_attack, draw_retire, draw_walk
 from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
                   BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME, FALL_TIME, draw_bird)
@@ -39,6 +42,7 @@ from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
+from lobby import Lobby
 from audio import Bgm, Sfx
 from ui import HUDOverlay, kill_icon
 from punch import DURATION as PUNCH_DURATION
@@ -439,6 +443,9 @@ class Enemy:
         self.death_time = 0.0
         self.death_y = self.y
         self.facing = -1
+        self.was_visible = False  # 고양이: 지난 프레임에 화면에 있었는지
+        self.fired = False  # 고양이: 이번 공격에서 총알을 쐈는지
+        self.next_shot = None  # 고양이: 다음 발사 예정 시각(게임 시간). 처음에는 None
 
     @property
     def top(self):
@@ -452,13 +459,18 @@ class Enemy:
             self.height,
         )
 
+    def is_attacking(self):
+        return self.attack_t is not None and self.attack_t < self.ATTACK_DURATION[self.kind]
+
+    def begin_attack(self):
+        self.attack_t = 0.0
+        self.fired = False
+
     def touch(self):
         """girl 과 닿는 순간 공격 모션을 한 번 재생한다. 접촉이 이어지는 동안은 다시 재생하지 않는다."""
         # 접촉이 막 시작됐고 이전 공격 모션이 끝난 경우에만 다시 재생한다.
-        if self.attack_hold <= 0.0 and (
-                self.attack_t is None
-                or self.attack_t >= self.ATTACK_DURATION[self.kind]):
-            self.attack_t = 0.0
+        if self.attack_hold <= 0.0 and not self.is_attacking():
+            self.begin_attack()
         self.attack_hold = ATTACK_HOLD
 
     def kill(self):
@@ -479,7 +491,8 @@ class Enemy:
         if self.attack_t is not None:
             self.attack_t += dt
         if self.kind in ("bear", "cat"):
-            self.x += self.vx * dt
+            if not (self.kind == "cat" and self.is_attacking()):
+                self.x += self.vx * dt
             half = self.width * 0.5
             if self.x < self.left + half:
                 self.x = self.left + half
@@ -881,6 +894,7 @@ class Game:
         self.girl.limit_right = self.world.world_w - 24
         self.skill_bg = SkillBackground()
         self.hud = HUDOverlay()
+        self.lobby = Lobby(WIDTH, HEIGHT, GROUND, STAND_Y)
         self.bgm = Bgm()
         self.sfx = Sfx()
 
@@ -901,6 +915,7 @@ class Game:
         self.particles = []
         self.slashes = []
         self.impacts = []
+        self.bullets = []
         self.last_attack_id = 0
         self.dust_timer = 0.0
         self.fps = 0.0
@@ -942,6 +957,7 @@ class Game:
         self.particles = []
         self.slashes = []
         self.impacts = []
+        self.bullets = []
         self.last_attack_id = 0
         self.dust_timer = 0.0
         self.smoke_time = 0.0
@@ -1025,6 +1041,8 @@ class Game:
 
         for enemy in self.world.enemies:
             enemy.update(dt, self.time)
+        self._update_cats()
+        self._update_bullets(dt)
 
         self._check_attack()
         self._check_coins()
@@ -1039,6 +1057,43 @@ class Game:
         if self.girl.state == "retire" and self.girl.retire_done:
             self.state = "gameover"
             self.best_score = max(self.best_score, self.score)
+
+    def _update_cats(self):
+        """고양이는 처음 나타날 때부터 5초마다 총을 쏜다.
+
+        발사 시각은 화면과 상관없이 5초 간격으로 흘러간다. 화면 밖에서 발사 시각이 와도 총알은 나간다.
+        공격 모션은 화면에 나타나는 순간과 발사 직전에 재생한다.
+        """
+        now = self.time
+        for enemy in self.world.enemies:
+            if enemy.kind != "cat" or not enemy.alive:
+                continue
+            visible = -80 < enemy.x - self.camera < WIDTH + 80
+            if enemy.next_shot is None and visible:
+                enemy.next_shot = now + CAT_FIRE_TIME
+            if visible and not enemy.is_attacking():
+                pre_roll = enemy.next_shot is not None and now >= enemy.next_shot - CAT_FIRE_TIME
+                if pre_roll or (not enemy.was_visible and enemy.next_shot is not None):
+                    enemy.begin_attack()
+            enemy.was_visible = visible
+            if enemy.is_attacking():
+                # 공격하는 동안에는 캐릭터 쪽을 바라본다.
+                enemy.facing = 1 if self.girl.focus_x() >= enemy.x else -1
+            if enemy.next_shot is not None and now >= enemy.next_shot:
+                mx, my = muzzle(enemy.x, enemy.y, enemy.facing)
+                self.bullets.append(Bullet(mx, my, enemy.facing))
+                enemy.next_shot += CAT_SHOT_INTERVAL
+
+    def _update_bullets(self, dt):
+        girl_rect = self.girl.rect()
+        for bullet in self.bullets:
+            bullet.update(dt)
+            if bullet.alive and overlaps(*girl_rect, *bullet.rect()):
+                bullet.alive = False
+                if self.girl.take_hit(bullet.x):
+                    self.sfx.play("female_deathsound.mp3")
+                    self.shake = max(self.shake, 11.0)
+        self.bullets = [b for b in self.bullets if b.alive]
 
     def _check_attack(self):
         hitbox = self.girl.attack_hitbox()
@@ -1262,7 +1317,7 @@ class Game:
         self.world.draw_background(self.camera, self.time, self.shake_x)
 
         if self.state == "title":
-            self._draw_title()
+            self.lobby.draw(self, art())
             return
 
         self._draw_world()
@@ -1301,6 +1356,8 @@ class Game:
             slash.draw(cam, shake)
         for impact in self.impacts:
             impact.draw(cam, shake)
+        for bullet in self.bullets:
+            bullet.draw(cam, shake)
 
     def _draw_hud(self):
         a = art()
@@ -1341,67 +1398,6 @@ class Game:
         color = (140, 230, 190) if self.fps >= 50.0 else (255, 190, 120)
         self.text.draw(16, x, y, "FPS %d" % round(self.fps), color,
                        align=align, shadow=None)
-
-    def _spotlight_image(self):
-        def paint():
-            pico2d.draw_circle(240, 240, 240, 255, 210, 160, 14, filled=True)
-            pico2d.draw_circle(240, 240, 180, 255, 210, 160, 20, filled=True)
-            pico2d.draw_circle(240, 240, 120, 255, 210, 160, 26, filled=True)
-
-        return art().bake("spotlight", 480, 480, paint)
-
-    def _title_glow_image(self):
-        def paint():
-            pico2d.draw_circle(300, 300, 300, 120, 80, 200, 20, filled=True)
-            pico2d.draw_circle(300, 300, 220, 120, 80, 200, 18, filled=True)
-
-        return art().bake("title_glow", 600, 600, paint)
-
-    def _draw_title(self):
-        a = art()
-        # 무대 (플레이 화면과 같은 바닥 그림)
-        pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 18, 24, 46, filled=True)
-        self.world.road.draw_top(a, 0, GROUND)
-
-        # 스포트라이트
-        a.blit(self._spotlight_image(), 986, GROUND + 200)
-
-        frame = int(self.time / 0.13)
-        self.girl.draw_preview(986, STAND_Y + 8, 0.62, frame)
-
-        title_x = 430
-        a.blit(self._title_glow_image(), title_x, 500)
-        self.text.draw(72, title_x, 520, "그림자 소녀",
-                       (246, 242, 255), "center", shadow=(52, 20, 80))
-        self.text.draw(22, title_x, 462, "S H A D O W   G I R L",
-                       (140, 230, 230), "center")
-        self.text.draw(19, title_x, 420,
-                       "어둠이 삼킨 숲을 지나 빛의 문으로",
-                       (170, 170, 215), "center")
-
-        blink = abs(math.sin(self.time * 2.2))
-        if blink > 0.25:
-            self.text.draw(28, title_x, 330,
-                           "SPACE 키를 눌러 시작",
-                           (255, 236, 190), "center")
-
-        self.text.draw(18, 60, 250,
-                       "A / D  또는  ← / →    이동", (200, 210, 235))
-        self.text.draw(18, 60, 218,
-                       "SPACE / W / ↑         점프", (200, 210, 235))
-        self.text.draw(18, 60, 186,
-                       "J / X                 공격", (200, 210, 235))
-        self.text.draw(18, 60, 154,
-                       "P                     일시정지", (150, 160, 190))
-        if self.best_score > 0:
-            self.text.draw(18, WIDTH - 60, 40,
-                           "BEST %06d" % self.best_score,
-                           (220, 210, 160), align="right")
-        self._draw_fps(WIDTH - 24, 26, align="right")
-        if self.renderer_name:
-            self.text.draw(14, WIDTH - 24, 8,
-                           "renderer: %s" % self.renderer_name,
-                           (110, 120, 150), align="right", shadow=None)
 
     def _draw_pause(self):
         pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 170,

@@ -41,7 +41,24 @@ RETIRE_FRAME_TIME = 0.09
 ATTACK_DURATION = ATTACK_FRAME_TIME * 10  # 공격 모션은 한 번만 재생한다
 RETIRE_DURATION = RETIRE_FRAME_TIME * 10
 
+# 총구 위치: 공격 3번째 프레임에서 총구가 가장 많이 나온다(칸 가운데 기준 오른쪽, 발밑 기준 위쪽, 원본 px)
+FIRE_FRAME = 3
+FIRE_TIME = FIRE_FRAME * ATTACK_FRAME_TIME
+SHOT_INTERVAL = 5.0  # 총알 발사 간격(초)
+MUZZLE_DX = 164
+MUZZLE_HEIGHT = 160
+
+BULLET_FILE = os.path.join(SPRITE_DIR, "bullet.png")
+BULLET_SCALE = 0.06  # 원본 1774x887 을 화면 크기로 줄이는 배율
+BULLET_TIP_X = 1540  # 총알 머리(원본 x)
+BULLET_CENTER_X = 887  # 그림 가운데(원본 x)
+BULLET_SPEED = 420.0  # 픽셀/초
+BULLET_LIFE = 4.0  # 발사 후 사라지기까지 시간(초)
+BULLET_HALF_W = 14
+BULLET_HALF_H = 8
+
 _sheets = {}
+_bullet_image = None
 
 
 def _sheet(path):
@@ -91,3 +108,41 @@ def draw_retire(x, y, facing, t, camera_x=0.0, shake_x=0.0):
     frame = min(int(t / RETIRE_FRAME_TIME), 9)
     _draw_frame(_sheet(RETIRE_FILE), frame, RETIRE_PAD, RETIRE_SCALE,
                 x, y, facing, camera_x, shake_x)
+
+
+def muzzle(x, y, facing):
+    """총구의 월드 좌표. (x, y) 는 고양이 발밑 중앙."""
+    return x + facing * MUZZLE_DX * FIRE_SCALE, y + MUZZLE_HEIGHT * FIRE_SCALE
+
+
+class Bullet:
+    def __init__(self, x, y, facing):
+        self.x = x
+        self.y = y
+        self.facing = facing
+        self.life = BULLET_LIFE
+        self.alive = True
+
+    def update(self, dt):
+        self.x += self.facing * BULLET_SPEED * dt
+        self.life -= dt
+        if self.life <= 0.0:
+            self.alive = False
+
+    def rect(self):
+        return (self.x - BULLET_HALF_W, self.y - BULLET_HALF_H,
+                BULLET_HALF_W * 2, BULLET_HALF_H * 2)
+
+    def draw(self, camera_x, shake_x=0.0):
+        global _bullet_image
+        if _bullet_image is None:
+            _bullet_image = pico2d.load_image(BULLET_FILE)
+        sheet = _bullet_image
+        # 총알 머리가 (x, y) 에 오도록 그림 가운데를 옮긴다. 뒤집히면 방향도 반대다.
+        offset = (BULLET_TIP_X - BULLET_CENTER_X) * BULLET_SCALE
+        center_x = self.x - camera_x + shake_x - self.facing * offset
+        flip = "h" if self.facing < 0 else ""
+        sheet.clip_composite_draw(
+            0, 0, sheet.w, sheet.h, 0.0, flip,
+            center_x, self.y, sheet.w * BULLET_SCALE, sheet.h * BULLET_SCALE,
+        )
