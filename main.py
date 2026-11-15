@@ -31,6 +31,11 @@ from road import Road
 
 WIDTH, HEIGHT = 1280, 720
 GROUND = 140
+# 공중에 떠 있는 오브젝트(발판, 코인, 하트, 위습, 발판 위 슬라임)를 내리는 양(px).
+# 바닥에 서 있는 것은 도로 윗면에 고정돼 있으므로 내리지 않는다.
+FLOAT_DROP = 60
+# 캐릭터와 땅 위의 적이 서는 높이. 도로 그림은 GROUND 에 그대로 둔다.
+STAND_Y = GROUND - FLOAT_DROP
 WORLD_W = 7000
 FPS = 60
 
@@ -546,17 +551,20 @@ class World:
     # ------------------------------------------------------------------
     def _add_ground(self, left, right):
         self.platforms.append(
-            Platform(left, GROUND - 240, right - left, 240)
+            Platform(left, STAND_Y - 240, right - left, 240)
         )
 
     def _add_platform(self, left, top, width, height=24):
         # 떠 있는 발판은 단방향: 아래에서 점프해 올라가고, 위에서만 딛는다.
         self.platforms.append(
-            Platform(left, top - height, width, height, one_way=True)
+            Platform(left, top - FLOAT_DROP - height, width, height,
+                     one_way=True)
         )
 
     def _add_coin(self, x, y):
-        self.coins.append(Coin(x, y, random.random() * math.tau))
+        self.coins.append(
+            Coin(x, y - FLOAT_DROP, random.random() * math.tau)
+        )
 
     def _coin_arc(self, cx, base_y, count=5, spacing=42, lift=70):
         for i in range(count):
@@ -577,7 +585,8 @@ class World:
 
     def _add_wisp(self, x, y):
         self.enemies.append(
-            Enemy("wisp", x, y, x - 50, x + 50, random.random() * math.tau)
+            Enemy("wisp", x, y - FLOAT_DROP, x - 50, x + 50,
+                  random.random() * math.tau)
         )
 
     # ------------------------------------------------------------------
@@ -639,31 +648,31 @@ class World:
 
         # 회복 아이템
         self.hearts = [
-            HeartPickup(1200, GROUND + 40, 0.0),
-            HeartPickup(3500, 410, 1.7),
-            HeartPickup(6000, GROUND + 40, 3.2),
+            HeartPickup(1200, GROUND + 40 - FLOAT_DROP, 0.0),
+            HeartPickup(3500, 410 - FLOAT_DROP, 1.7),
+            HeartPickup(6000, GROUND + 40 - FLOAT_DROP, 3.2),
         ]
 
         # 슬라임
-        self._add_slime(780, GROUND, 700, 1500)
-        self._add_slime(1250, GROUND, 1150, 1490)
-        self._add_slime(1750, GROUND, 1640, 1900)
-        self._add_slime(2450, GROUND, 2300, 2650)
-        self._add_slime(2810, GROUND, 2700, 2890)
-        self._add_slime(3250, GROUND, 3040, 3400)
-        self._add_slime(3600, GROUND, 3450, 3700)
-        self._add_slime(3960, GROUND, 3800, 4180)
-        self._add_slime(4550, GROUND, 4360, 4700)
-        self._add_slime(5050, GROUND, 4900, 5200)
-        self._add_slime(5450, GROUND, 5300, 5490)
-        self._add_slime(5900, GROUND, 5660, 6000)
-        self._add_slime(6300, GROUND, 6120, 6500)
-        self._add_slime(6600, GROUND, 6500, 6880)
+        self._add_slime(780, STAND_Y, 700, 1500)
+        self._add_slime(1250, STAND_Y, 1150, 1490)
+        self._add_slime(1750, STAND_Y, 1640, 1900)
+        self._add_slime(2450, STAND_Y, 2300, 2650)
+        self._add_slime(2810, STAND_Y, 2700, 2890)
+        self._add_slime(3250, STAND_Y, 3040, 3400)
+        self._add_slime(3600, STAND_Y, 3450, 3700)
+        self._add_slime(3960, STAND_Y, 3800, 4180)
+        self._add_slime(4550, STAND_Y, 4360, 4700)
+        self._add_slime(5050, STAND_Y, 4900, 5200)
+        self._add_slime(5450, STAND_Y, 5300, 5490)
+        self._add_slime(5900, STAND_Y, 5660, 6000)
+        self._add_slime(6300, STAND_Y, 6120, 6500)
+        self._add_slime(6600, STAND_Y, 6500, 6880)
         # 발판 위 슬라임
-        self._add_slime(2140, 380, 2050, 2230)
-        self._add_slime(3520, 360, 3420, 3620)
-        self._add_slime(4890, 400, 4800, 4980)
-        self._add_slime(6200, 380, 6100, 6300)
+        self._add_slime(2140, 380 - FLOAT_DROP, 2050, 2230)
+        self._add_slime(3520, 360 - FLOAT_DROP, 3420, 3620)
+        self._add_slime(4890, 400 - FLOAT_DROP, 4800, 4980)
+        self._add_slime(6200, 380 - FLOAT_DROP, 6100, 6300)
 
         # 위습(날아다니는 적)
         self._add_wisp(1350, 300)
@@ -734,11 +743,14 @@ class World:
             if x + p.width < -40 or x > WIDTH + 40:
                 continue
             if p.one_way:
-                image = self._platform_image(p)
+                a.blit_to(self._platform_image(p), x, p.bottom,
+                          p.width, p.height)
             else:
+                # 땅 블록의 물리 윗면은 STAND_Y 지만, 그림은 도로 윗면(GROUND)까지 그린다.
+                height = p.height + FLOAT_DROP
                 image = self.road.ground(a, p.left, p.bottom, p.width,
-                                         p.height, GROUND, (18, 24, 46))
-            a.blit_to(image, x, p.bottom, p.width, p.height)
+                                         height, GROUND, (18, 24, 46))
+                a.blit_to(image, x, p.bottom, p.width, height)
 
     # ------------------------------------------------------------------
     # 체크포인트 / 골 / 아이템
@@ -913,7 +925,7 @@ class Game:
     def __init__(self):
         self.text = TextRenderer()
         self.world = World()
-        self.girl = Girl(160, GROUND)
+        self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = WORLD_W - 24
 
@@ -926,7 +938,7 @@ class Game:
 
         self.score = 0
         self.coin_count = 0
-        self.checkpoint = (160, GROUND)
+        self.checkpoint = (160, STAND_Y)
         self.best_score = 0
         self.clear_bonus = 0
 
@@ -956,7 +968,7 @@ class Game:
     # ------------------------------------------------------------------
     def start(self):
         self.world = World()
-        self.girl = Girl(160, GROUND)
+        self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = WORLD_W - 24
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
@@ -966,7 +978,7 @@ class Game:
         self.shake = 0.0
         self.score = 0
         self.coin_count = 0
-        self.checkpoint = (160, GROUND)
+        self.checkpoint = (160, STAND_Y)
         self.clear_bonus = 0
         self.particles = []
         self.slashes = []
@@ -1348,7 +1360,7 @@ class Game:
         a.blit(self._spotlight_image(), 986, GROUND + 200)
 
         frame = int(self.time / 0.13) % 10
-        self.girl.draw_preview(986, GROUND + 8, 0.62, frame)
+        self.girl.draw_preview(986, STAND_Y + 8, 0.62, frame)
 
         title_x = 430
         a.blit(self._title_glow_image(), title_x, 500)
