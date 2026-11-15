@@ -12,6 +12,7 @@ SPEC = replace(
     repeat(STAGE1, times=3, name="2스테이지"),
     background="background_stage2.png",
     time_bonus=9000,
+    bgm="stage2_bgm.mp3",
     road="road_stage2.png",
     fence="fence_stage2.png",
     bench_file="bench_stage2.png",

@@ -37,6 +37,7 @@ from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
+from audio import Bgm
 from ui import HUDOverlay, kill_icon
 from punch import DURATION as PUNCH_DURATION
 from punch import PunchImpact, draw_punch
@@ -867,6 +868,7 @@ class Game:
         self.girl.limit_right = self.world.world_w - 24
         self.skill_bg = SkillBackground()
         self.hud = HUDOverlay()
+        self.bgm = Bgm()
 
         self.state = "title"
         self.time = 0.0
@@ -909,6 +911,7 @@ class Game:
     # ------------------------------------------------------------------
     def start(self):
         self.world = World(STAGES[self.stage])
+        self.bgm.play(self.world.spec.bgm)
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = self.world.world_w - 24
@@ -943,8 +946,10 @@ class Game:
         if self.state == "play":
             self.state = "paused"
             self.girl.clear_keys()
+            self.bgm.pause()
         elif self.state == "paused":
             self.state = "play"
+            self.bgm.resume()
 
     # ------------------------------------------------------------------
     def update(self, dt):
@@ -1518,6 +1523,7 @@ def main():
             if remain > 0.001:
                 time.sleep(remain)
 
+    game.bgm.close()
     pico2d.close_canvas()
 
 

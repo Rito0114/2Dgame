@@ -27,6 +27,7 @@ class StageSpec:
     heart_min_segment: int  # 회복 아이템이 나오기 시작하는 땅 번호(0부터)
     pit_arc_count: int  # 코인 포물선을 놓을 구멍 수
     time_bonus: int = 3000  # 클리어 시간 보너스의 기준 점수(시간이 지나면 줄어든다)
+    bgm: str = "stage1_bgm.mp3"  # sound 폴더 안의 배경음악
     # 배경/도로/울타리 그림 (sprites/object 안의 파일 이름)
     background: str = "background.png"
     background_overlay: str = "background_black.png"
