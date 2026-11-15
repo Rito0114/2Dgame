@@ -3,7 +3,14 @@
 길이, 몬스터 수, 코인 수, 회복 아이템 수, 벤치와 상자 수가 모두 1스테이지의 3배다.
 """
 
+from dataclasses import replace
+
 from stage import repeat
 from stage1 import SPEC as STAGE1
 
-SPEC = repeat(STAGE1, times=3, name="2스테이지")
+SPEC = replace(
+    repeat(STAGE1, times=3, name="2스테이지"),
+    background="background_stage2.png",
+    road="road_stage2.png",
+    fence="fence_stage2.png",
+)

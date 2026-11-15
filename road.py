@@ -61,7 +61,7 @@ class Road:
                 pico2d.draw_rectangle(width - i - 1, 0, width - i, height,
                                       8, 10, 24, alpha, filled=True)
 
-        key = ("ground", width, height, int(left) % road.w, base_color)
+        key = ("ground", self.path, width, height, int(left) % road.w, base_color)
         return art.bake(key, width, height, paint)
 
     def draw_top(self, art, x, ground_y):

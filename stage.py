@@ -26,6 +26,11 @@ class StageSpec:
     heart_count: int  # 회복 아이템 수
     heart_min_segment: int  # 회복 아이템이 나오기 시작하는 땅 번호(0부터)
     pit_arc_count: int  # 코인 포물선을 놓을 구멍 수
+    # 배경/도로/울타리 그림 (sprites/object 안의 파일 이름)
+    background: str = "background.png"
+    background_overlay: str = "background_black.png"
+    road: str = "road.png"
+    fence: str = "fence2.png"
 
 
 def repeat(spec, times, name):

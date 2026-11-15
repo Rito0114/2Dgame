@@ -92,7 +92,7 @@ class Fence:
             pico2d.SDL_SetTextureColorMod(fence.texture, 255, 255, 255)
             pico2d.SDL_SetTextureAlphaMod(fence.texture, 255)
 
-        key = ("fence", out_w, out_h, bays)
+        key = ("fence", self.path, out_w, out_h, bays)
         return art.bake(key, out_w, out_h, paint)
 
     def draw(self, art, width, x, ground_y):

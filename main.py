@@ -54,10 +54,6 @@ STAND_Y = GROUND - FLOAT_DROP
 FPS = 60
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BG_FILE = os.path.join(BASE_DIR, "sprites", "object", "background.png")
-BG_OVERLAY_FILE = os.path.join(BASE_DIR, "sprites", "object", "background_black.png")
-ROAD_FILE = os.path.join(BASE_DIR, "sprites", "object", "road.png")
-FENCE_FILE = os.path.join(BASE_DIR, "sprites", "object", "fence2.png")
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
 FURNITURE_GAP = 40
 # 코인/회복 아이템 배치
@@ -527,10 +523,12 @@ class World:
         self.checkpoints = []
         self.goal_x = spec.goal_x
         self.goal_y = GROUND
-        self.background = Background(BG_FILE, BG_OVERLAY_FILE)
-        self.road = Road(ROAD_FILE)
+        obj = os.path.join(BASE_DIR, "sprites", "object")
+        self.background = Background(os.path.join(obj, spec.background),
+                                     os.path.join(obj, spec.background_overlay))
+        self.road = Road(os.path.join(obj, spec.road))
         self.lamp = Lamp()
-        self.fence = Fence(FENCE_FILE)
+        self.fence = Fence(os.path.join(obj, spec.fence))
         self.ground_spans = []
         self.furniture = []  # (종류, 그림 객체, 그림 중심 x)
         self._build()
@@ -1450,10 +1448,7 @@ def main():
                 elif ev.key == sdl2.SDLK_p and game.state in ("play", "paused"):
                     game.toggle_pause()
                 elif game.state == "play":
-                    if ev.key == sdl2.SDLK_r:
-                        game.start()
-                    else:
-                        game.girl.handle_event(ev)
+                    game.girl.handle_event(ev)
                 elif game.state == "clear" and ev.key == sdl2.SDLK_r:
                     game.next_stage()
                 elif game.state in ("title", "clear", "gameover"):
