@@ -17,6 +17,10 @@ SFX_VOLUME = int(mix.MIX_MAX_VOLUME * 0.7)
 # 파일별 효과음 음량(기본값은 SFX_VOLUME). 음량은 최대치(MIX_MAX_VOLUME)를 넘을 수 없다.
 SFX_VOLUMES = {
     "falling_sound.mp3": mix.MIX_MAX_VOLUME,
+    "checkpoint_sound.mp3": mix.MIX_MAX_VOLUME,
+    "jump_sound.mp3": mix.MIX_MAX_VOLUME,
+    "heal_sound.mp3": int(mix.MIX_MAX_VOLUME * 0.35),
+    "coin_sound.mp3": int(mix.MIX_MAX_VOLUME * 0.35),
 }
 
 _opened = None

@@ -998,6 +998,7 @@ class Game:
 
         # 착지/점프/달리기 먼지
         if self.girl.just_jumped:
+            self.sfx.play("jump_sound.mp3")
             self._dust(self.girl.x, self.girl.y, 6)
         if self.girl.just_landed:
             self._dust(self.girl.x, self.girl.y,
@@ -1062,6 +1063,7 @@ class Game:
                         coin.x - 16, coin.y - 16, 32, 32):
                 coin.taken = True
                 self.coin_count += 1
+                self.sfx.play("coin_sound.mp3")
                 self.score += 10
                 self.burst(coin.x, coin.y, (255, 220, 120),
                            8, 190, 0.45, 3, gravity=250)
@@ -1073,6 +1075,7 @@ class Game:
             if overlaps(*self.girl.rect(),
                         heart.x - 18, heart.y - 18, 36, 36):
                 heart.taken = True
+                self.sfx.play("heal_sound.mp3")
                 if self.girl.hp < self.girl.MAX_HP:
                     self.girl.heal(1)
                 else:
@@ -1089,6 +1092,7 @@ class Game:
                 continue
             if lo - 46 <= cp.x <= hi + 46 and self.girl.y <= cp.y + CHECKPOINT_REACH_Y:
                 cp.active = True
+                self.sfx.play("checkpoint_sound.mp3")
                 self.checkpoint = (cp.x, cp.y + 2)
                 self.girl.heal(1)
                 self.burst(cp.x, cp.y + 110, (120, 250, 220),
