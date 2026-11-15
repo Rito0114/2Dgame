@@ -33,6 +33,8 @@ from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
 from fence import Fence
 from girl import Girl
 from lamp import Lamp
+from punch import DURATION as PUNCH_DURATION
+from punch import draw_punch
 from bench import Bench
 from box import Box
 from road import Road
@@ -383,39 +385,28 @@ class Particle:
 
 
 class Slash:
-    """공격 이펙트(초승달 모양)."""
+    """공격 이펙트(punch_effect.png 10프레임을 한 번 재생)."""
 
-    def __init__(self, x, y, facing):
-        self.x = x
-        self.y = y
+    def __init__(self, girl, facing):
+        self.girl = girl
+        self.x = girl.x
+        self.y = girl.y
         self.facing = facing
-        self.life = 0.18
-        self.max_life = 0.18
+        self.elapsed = 0.0
+        self.life = PUNCH_DURATION
+        self.max_life = PUNCH_DURATION
 
     def update(self, dt):
+        # 이펙트는 공격하는 동안 캐릭터를 따라 움직인다.
+        self.x = self.girl.x
+        self.y = self.girl.y
+        self.elapsed += dt
         self.life -= dt
 
     def draw(self, camera_x, shake_x=0.0):
         if self.life <= 0:
             return
-        ratio = self.life / self.max_life
-        alpha = int(230 * ratio)
-        cx = self.x - camera_x + shake_x + self.facing * 40
-        cy = self.y + 100
-        for band, radius in enumerate((56, 68, 80)):
-            color = (220, 245, 255) if band == 1 else (140, 220, 235)
-            for i in range(7):
-                a1 = math.radians(-64 + i * 18)
-                a2 = math.radians(-64 + (i + 1) * 18)
-                x1 = cx + math.cos(a1) * radius * self.facing
-                y1 = cy + math.sin(a1) * radius
-                x2 = cx + math.cos(a2) * radius * self.facing
-                y2 = cy + math.sin(a2) * radius
-                pico2d.draw_line(
-                    x1, y1, x2, y2,
-                    color[0], color[1], color[2], alpha,
-                )
-
+        draw_punch(self.x - camera_x + shake_x, self.y, self.facing, self.elapsed)
 
 class Coin:
     __slots__ = ("x", "y", "phase", "taken")
@@ -1102,7 +1093,7 @@ class Game:
         if self.girl.attack_id != self.last_attack_id:
             self.last_attack_id = self.girl.attack_id
             self.slashes.append(
-                Slash(self.girl.x, self.girl.y, self.girl.facing)
+                Slash(self.girl, self.girl.facing)
             )
             self.burst(
                 self.girl.x + self.girl.facing * 60,
