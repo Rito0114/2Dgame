@@ -28,6 +28,8 @@ import sdl2
 from background import Background
 from fence import Fence
 from girl import Girl
+from bench import Bench
+from box import Box
 from road import Road
 
 WIDTH, HEIGHT = 1280, 720
@@ -45,6 +47,12 @@ BG_FILE = os.path.join(BASE_DIR, "background.png")
 BG_OVERLAY_FILE = os.path.join(BASE_DIR, "background_black.png")
 ROAD_FILE = os.path.join(BASE_DIR, "road.png")
 FENCE_FILE = os.path.join(BASE_DIR, "fence2.png")
+# 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
+BENCH_COUNT = 10
+BOX_COUNT = 6
+FURNITURE_GAP = 40
+FURNITURE_MIN_X = 700
+FURNITURE_MAX_X = 6200
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -303,7 +311,7 @@ class TextRenderer:
 
 
 class Platform:
-    __slots__ = ("left", "bottom", "width", "height", "one_way", "image")
+    __slots__ = ("left", "bottom", "width", "height", "one_way")
 
     def __init__(self, left, bottom, width, height, one_way=False):
         self.left = left
@@ -312,8 +320,6 @@ class Platform:
         self.height = height
         # one_way(단방향) 발판은 아래에서 점프해 통과하고, 위에서만 착지한다.
         self.one_way = one_way
-        # 발판 그림은 처음 그릴 때 한 번만 구워서 재사용한다.
-        self.image = None
 
     @property
     def right(self):
@@ -551,6 +557,7 @@ class World:
         self.road = Road(ROAD_FILE)
         self.fence = Fence(FENCE_FILE)
         self.ground_spans = []
+        self.furniture = []  # (종류, 그림 객체, 그림 중심 x)
         self._build()
 
     # ------------------------------------------------------------------
@@ -560,12 +567,59 @@ class World:
             Platform(left, STAND_Y - 240, right - left, 240)
         )
 
-    def _add_platform(self, left, top, width, height=24):
-        # 떠 있는 발판은 단방향: 아래에서 점프해 올라가고, 위에서만 딛는다.
+    def _add_surface(self, left, top, width, height=24):
+        # 벤치/상자의 윗면은 단방향 발판: 아래에서 점프해 올라가고, 위에서만 딛는다.
         self.platforms.append(
-            Platform(left, top - FLOAT_DROP - height, width, height,
-                     one_way=True)
+            Platform(left, top - height, width, height, one_way=True)
         )
+
+    def _place_furniture(self, bench_count, box_count):
+        """벤치와 상자를 땅 구간 위에 겹치지 않게 랜덤으로 놓는다."""
+        box_half = Box(STAND_Y).size() * 0.5
+        bench_half = Bench().size() * 0.5
+        placed = []  # (중심 x, 반폭)
+
+        def free(cx, half):
+            for other, other_half in placed:
+                if abs(cx - other) < half + other_half + FURNITURE_GAP:
+                    return False
+            for cp in self.checkpoints:
+                if abs(cx - cp.x) < half + 60:
+                    return False
+            return True
+
+        def pick(half):
+            for _ in range(300):
+                left, right = random.choice(self.ground_spans)
+                lo = max(left + half, FURNITURE_MIN_X)
+                hi = min(right - half, FURNITURE_MAX_X)
+                if lo > hi:
+                    continue
+                cx = random.uniform(lo, hi)
+                if free(cx, half):
+                    placed.append((cx, half))
+                    return cx
+            return None
+
+        for _ in range(box_count):
+            cx = pick(box_half)
+            if cx is not None:
+                self.furniture.append(("high", Box(STAND_Y), cx))
+        for _ in range(bench_count):
+            cx = pick(bench_half)
+            if cx is not None:
+                self.furniture.append(("low", Bench(), cx))
+
+    def _add_surfaces(self):
+        """가구의 밟을 수 있는 윗면을 발판으로 만든다."""
+        for kind, prop, cx in self.furniture:
+            if kind == "low":
+                left, width, top = prop.seat_surface(GROUND)
+                self._add_surface(cx + left, top, width)
+            else:
+                for level in (1, 2):
+                    left, width, top = prop.level_surface(level)
+                    self._add_surface(cx + left, top, width)
 
     def _add_coin(self, x, y):
         self.coins.append(
@@ -589,6 +643,14 @@ class World:
             Enemy("slime", x, ground_y, left, right, random.random() * math.tau)
         )
 
+    def _add_slime_on_surface(self):
+        candidates = [p for p in self.platforms if p.one_way and p.width >= 150]
+        plat = random.choice(candidates)
+        self.enemies.append(
+            Enemy("slime", plat.left + plat.width * 0.5, plat.top,
+                  plat.left, plat.right, random.random() * math.tau)
+        )
+
     def _add_wisp(self, x, y):
         self.enemies.append(
             Enemy("wisp", x, y - FLOAT_DROP, x - 50, x + 50,
@@ -608,22 +670,12 @@ class World:
         for left, right in segments:
             self._add_ground(left, right)
 
-        # 떠 있는 발판 (left, top, width)
-        platforms = [
-            (420, 260, 180), (700, 380, 180), (980, 260, 160),
-            (1740, 260, 200), (2050, 380, 180), (2350, 300, 200),
-            (2650, 440, 160),
-            (3140, 260, 160), (3420, 360, 200), (3720, 280, 160),
-            (4000, 420, 180),
-            (4500, 280, 180), (4800, 400, 180), (5100, 300, 200),
-            (5350, 240, 160),
-            (5800, 260, 180), (6100, 380, 200), (6400, 280, 160),
-        ]
-        for left, top, width in platforms:
-            self._add_platform(left, top, width)
-
         # 체크포인트
         self.checkpoints = [Checkpoint(2000, GROUND), Checkpoint(4500, GROUND)]
+
+        # 벤치(6개)와 상자(7개)를 랜덤으로 배치하고, 그 윗면을 발판으로 만든다.
+        self._place_furniture(BENCH_COUNT, BOX_COUNT)
+        self._add_surfaces()
 
         # 코인
         self._coin_line(180, 400, 200)
@@ -674,11 +726,9 @@ class World:
         self._add_slime(5900, STAND_Y, 5660, 6000)
         self._add_slime(6300, STAND_Y, 6120, 6500)
         self._add_slime(6600, STAND_Y, 6500, 6880)
-        # 발판 위 슬라임
-        self._add_slime(2140, 380 - FLOAT_DROP, 2050, 2230)
-        self._add_slime(3520, 360 - FLOAT_DROP, 3420, 3620)
-        self._add_slime(4890, 400 - FLOAT_DROP, 4800, 4980)
-        self._add_slime(6200, 380 - FLOAT_DROP, 6100, 6300)
+        # 벤치/상자 위 슬라임
+        for _ in range(4):
+            self._add_slime_on_surface()
 
         # 위습(날아다니는 적)
         self._add_wisp(1350, 300)
@@ -698,50 +748,6 @@ class World:
     # ------------------------------------------------------------------
     # 발판
     # ------------------------------------------------------------------
-    def _platform_image(self, p):
-        if p.image is not None:
-            return p.image
-
-        width = p.width
-        height = p.height
-
-        def paint():
-            bottom = 0
-            top = height
-            # 본체
-            pico2d.draw_rectangle(0, bottom, width, top - 12,
-                                  18, 24, 46, filled=True)
-            # 위쪽 잔디/네온 테두리
-            pico2d.draw_rectangle(0, top - 12, width, top - 7,
-                                  34, 116, 126, filled=True)
-            pico2d.draw_rectangle(0, top - 7, width, top,
-                                  62, 226, 196, filled=True)
-            # 외곽선
-            pico2d.draw_rectangle(1, bottom + 1, width - 1, top - 1,
-                                  44, 60, 100)
-            # 두꺼운 땅의 결
-            if height > 80:
-                yy = bottom + 30
-                while yy < top - 26:
-                    pico2d.draw_line(8, yy, width - 8, yy, 26, 34, 60)
-                    yy += 46
-            # 잔디 포기
-            spacing = 52
-            wx = int(p.left // spacing) * spacing
-            while wx < p.left + width:
-                sx = wx - p.left
-                if -8 < sx < width + 8:
-                    lean = 3 if (wx // spacing) % 2 == 0 else -3
-                    pico2d.draw_line(sx, top, sx + lean, top + 9,
-                                     58, 222, 192)
-                    pico2d.draw_line(sx + 5, top, sx + 8, top + 6,
-                                     42, 168, 160)
-                wx += spacing
-
-        key = ("platform", width, height, int(p.left) % 104)
-        p.image = art().bake(key, width, height, paint)
-        return p.image
-
     def draw_fence(self, camera_x, shake_x=0.0):
         a = art()
         for left, right in self.ground_spans:
@@ -753,19 +759,27 @@ class World:
 
     def draw_platforms(self, camera_x, shake_x=0.0):
         a = art()
+        # 레이어 순서: 땅 블록 < 벤치(낮은 발판) < 상자(높은 발판)
         for p in self.platforms:
+            if p.one_way:
+                continue
             x = p.left - camera_x + shake_x
             if x + p.width < -40 or x > WIDTH + 40:
                 continue
-            if p.one_way:
-                a.blit_to(self._platform_image(p), x, p.bottom,
-                          p.width, p.height)
-            else:
-                # 땅 블록의 물리 윗면은 STAND_Y 지만, 그림은 도로 윗면(GROUND)까지 그린다.
-                height = p.height + FLOAT_DROP
-                image = self.road.ground(a, p.left, p.bottom, p.width,
-                                         height, GROUND, (18, 24, 46))
-                a.blit_to(image, x, p.bottom, p.width, height)
+            # 땅 블록의 물리 윗면은 STAND_Y 지만, 그림은 도로 윗면(GROUND)까지 그린다.
+            height = p.height + FLOAT_DROP
+            image = self.road.ground(a, p.left, p.bottom, p.width,
+                                     height, GROUND, (18, 24, 46))
+            a.blit_to(image, x, p.bottom, p.width, height)
+        for kind in ("low", "high"):
+            for furniture_kind, prop, cx in self.furniture:
+                if furniture_kind != kind:
+                    continue
+                x = cx - camera_x + shake_x
+                half = prop.size() * 0.5
+                if x + half < -40 or x - half > WIDTH + 40:
+                    continue
+                prop.draw(a, x, GROUND)
 
     # ------------------------------------------------------------------
     # 체크포인트 / 골 / 아이템

@@ -21,7 +21,7 @@ SHEET_FILES = {
     "attack": "attack_sprite.png",
     "hit": "hit_sprite.png",
     "retire": "retire_sprite.png",
-    "run": "run_sprite.png",
+    "run": "run_sprite4.png",
 }
 # 시트별 (열 수, 행 수). 대부분 5x2 이고, 달리기는 20프레임(5x4)이다.
 SHEET_GRID = {
@@ -36,7 +36,7 @@ SHEET_GRID = {
 # 화면에 그릴 때 크기(원본 307x512 셀을 0.38배로 축소)
 SCALE = 0.38
 # 달리기 시트는 머리가 상대적으로 커서, 화면에서 머리 폭이 대기 자세와 같도록 줄인다.
-SHEET_SCALE = {"run": 0.545}
+SHEET_SCALE = {"run": 0.531}
 
 # 시트마다 셀 아래쪽 여백(캐릭터 발이 셀 바닥에서 얼마나 떨어져 있는지)이 다르다.
 # 실측값(px, 원본 기준)을 시트별로 보정해서 시트를 바꿔도 발 높이가 크게 튀지 않게 한다.
@@ -51,7 +51,7 @@ FOOT_PAD = {
 # 정확히 발밑 좌표에 오도록 맞춰야 땅에 뜨거나 파묻히지 않는다.
 RETIRE_PAD = (37, 37, 40, 32, 32, 63, 64, 63, 60, 56)
 # 달리기 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px). 발이 땅에 붙도록 보정한다.
-RUN_PAD = (10, 0, 0, 0, 7, 0, 0, 0, 0, 0, 16, 7, 10, 7, 1, 5, 3, 5, 3, 3)
+RUN_PAD = (9, 13, 8, 8, 8, 11, 10, 9, 9, 8, 9, 13, 8, 8, 8, 12, 11, 10, 10, 9)
 
 LEFT_KEYS = {sdl2.SDLK_a, sdl2.SDLK_LEFT}
 RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
