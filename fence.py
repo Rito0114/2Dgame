@@ -18,6 +18,8 @@ FENCE_POSTS = (
     2422.5, 2711.0, 2998.0, 3247.5, 3499.5, 3788.0, 4074.5, 4325.5,
 )
 POST_HALF = 11
+# 울타리 끝 그림자 폭(px)
+SHADE_PX = 7
 BAY_NATIVE = (FENCE_POSTS[-1] - FENCE_POSTS[0]) / (len(FENCE_POSTS) - 1)
 
 
@@ -60,14 +62,35 @@ class Fence:
                                     int(bay_w) + 1, out_h),
                 )
             i = bays % count
-            src_x0 = FENCE_POSTS[i] - POST_HALF
+            last_x0 = FENCE_POSTS[i] - POST_HALF
             pico2d.SDL_RenderCopy(
                 art.renderer, fence.texture,
-                pico2d.SDL_Rect(int(src_x0), 0,
+                pico2d.SDL_Rect(int(last_x0), 0,
                                 int(POST_HALF * 2), fence.h),
                 pico2d.SDL_Rect(int(out_w - post_w), 0,
                                 int(post_w), out_h),
             )
+
+            # 구멍과 맞닿는 끝의 기둥 가장자리를 어둡게 한다.
+            # 기둥 픽셀만 복사하므로 그림자가 빈 배경으로 번지지 않는다.
+            first_x0 = int(FENCE_POSTS[0] - POST_HALF)
+            last_x1 = int(last_x0 + POST_HALF * 2)
+            pico2d.SDL_SetTextureColorMod(fence.texture, 40, 42, 60)
+            for k in range(SHADE_PX):
+                alpha = int(200 * (1.0 - k / SHADE_PX))
+                pico2d.SDL_SetTextureAlphaMod(fence.texture, alpha)
+                pico2d.SDL_RenderCopy(
+                    art.renderer, fence.texture,
+                    pico2d.SDL_Rect(first_x0 + k, 0, 1, fence.h),
+                    pico2d.SDL_Rect(k, 0, 1, out_h),
+                )
+                pico2d.SDL_RenderCopy(
+                    art.renderer, fence.texture,
+                    pico2d.SDL_Rect(last_x1 - 1 - k, 0, 1, fence.h),
+                    pico2d.SDL_Rect(out_w - 1 - k, 0, 1, out_h),
+                )
+            pico2d.SDL_SetTextureColorMod(fence.texture, 255, 255, 255)
+            pico2d.SDL_SetTextureAlphaMod(fence.texture, 255)
 
         key = ("fence", out_w, out_h, bays)
         return art.bake(key, out_w, out_h, paint)
