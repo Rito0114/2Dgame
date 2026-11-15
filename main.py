@@ -26,6 +26,7 @@ import pico2d
 import sdl2
 
 from background import Background
+from fence import Fence
 from girl import Girl
 from road import Road
 
@@ -42,6 +43,7 @@ FPS = 60
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BG_FILE = os.path.join(BASE_DIR, "background.png")
 ROAD_FILE = os.path.join(BASE_DIR, "road.png")
+FENCE_FILE = os.path.join(BASE_DIR, "fence.png")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -546,10 +548,13 @@ class World:
         self.goal_y = GROUND
         self.background = Background(BG_FILE)
         self.road = Road(ROAD_FILE)
+        self.fence = Fence(FENCE_FILE)
+        self.ground_spans = []
         self._build()
 
     # ------------------------------------------------------------------
     def _add_ground(self, left, right):
+        self.ground_spans.append((left, right))
         self.platforms.append(
             Platform(left, STAND_Y - 240, right - left, 240)
         )
@@ -735,6 +740,15 @@ class World:
         key = ("platform", width, height, int(p.left) % 104)
         p.image = art().bake(key, width, height, paint)
         return p.image
+
+    def draw_fence(self, camera_x, shake_x=0.0):
+        a = art()
+        for left, right in self.ground_spans:
+            width = right - left
+            x = left - camera_x + shake_x
+            if x + width < -40 or x > WIDTH + 40:
+                continue
+            self.fence.draw(a, left, width, x, GROUND)
 
     def draw_platforms(self, camera_x, shake_x=0.0):
         a = art()
@@ -1280,6 +1294,7 @@ class Game:
         cam = self.camera
         shake = self.shake_x
 
+        self.world.draw_fence(cam, shake)
         self.world.draw_platforms(cam, shake)
         self.world.draw_checkpoints(cam, self.time, shake)
         self.world.draw_goal(cam, self.time, shake)
