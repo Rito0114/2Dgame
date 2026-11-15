@@ -30,7 +30,20 @@ CELL_H = SHEET_H // ROWS  # 512
 SCALE = 0.38
 DRAW_W = int(round(307 * SCALE))   # 117
 DRAW_H = int(round(CELL_H * SCALE))  # 195
-FOOT_PAD = int(round(34 * SCALE))    # 셀 아래쪽 여백 보정 (13)
+
+# 시트마다 셀 아래쪽 여백(캐릭터 발이 셀 바닥에서 얼마나 떨어져 있는지)이 다르다.
+# 실측값(px, 원본 기준)을 시트별로 보정해서 시트를 바꿔도 발 높이가 크게 튀지 않게 한다.
+FOOT_PAD = {
+    "idle": 42,
+    "jump": 44,
+    "attack": 36,
+    "hit": 40,
+    "retire": 48,
+}
+# 사망 모션은 몸이 바닥으로 내려앉는 동작이라, 프레임마다 가장 낮은 픽셀이
+# 정확히 발밑 좌표에 오도록 맞춰야 땅에 뜨거나 파묻히지 않는다.
+RETIRE_PAD = (37, 37, 40, 32, 32, 63, 64, 63, 60, 56)
+RUN_LEAN = 0.10  # 달릴 때 몸을 앞으로 기울이는 정도(라디안)
 
 LEFT_KEYS = {sdl2.SDLK_a, sdl2.SDLK_LEFT}
 RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
@@ -206,8 +219,9 @@ class Girl:
         self.on_ground = False
         self.jump_buffer = 0.0
         self.jump_held = False
+        # 공격자 쪽을 바라보되, 넉백은 반대 방향(뒤로)으로 밀린다.
         self.facing = 1 if source_x >= self.x else -1
-        self.vx = 330.0 * self.facing
+        self.vx = -330.0 * self.facing
         self.vy = 420.0
         self._set_state("hit")
         if self.hp <= 0:
@@ -256,7 +270,24 @@ class Girl:
         self.prev_y = self.y
 
         if self.state == "retire":
+            # 쓰러지는 동안에도 중력은 적용해서, 공중에서 죽어도 땅으로 내려앉는다.
             self.anim_time += dt
+            if not self.on_ground:
+                self.vy = max(self.vy - self.GRAVITY * dt, -self.MAX_FALL)
+                prev_bottom = self.y
+                self.y += self.vy * dt
+                for platform in platforms:
+                    if self.right <= platform.left or self.left >= platform.right:
+                        continue
+                    if (prev_bottom >= platform.top - 0.5
+                            and self.y <= platform.top):
+                        self.y = platform.top
+                        self.vy = 0.0
+                        self.on_ground = True
+                        break
+                if self.y < -400.0:  # 구멍으로 떨어져 내려가는 경우
+                    self.y = -400.0
+                    self.vy = 0.0
             return
 
         dt = min(dt, 1.0 / 30.0)
@@ -315,6 +346,8 @@ class Girl:
         # --- X 이동 및 벽 충돌 -----------------------------------------
         self.x += self.vx * dt
         for platform in platforms:
+            if platform.one_way:
+                continue
             if not self._overlaps(platform):
                 continue
             if self.vx > 0.0:
@@ -326,38 +359,35 @@ class Girl:
             self.vx = 0.0
 
         # --- Y 이동 및 바닥/천장 충돌 ----------------------------------
+        # 빠르게 떨어질 때 얇은 발판을 통과하지 않도록, 이전 위치에서 현재
+        # 위치까지의 이동 구간으로 충돌을 검사한다. 단방향 발판은 위에서만
+        # 착지하고, 아래에서 올라갈 때는 그대로 통과한다.
         fall_speed = self.vy
+        prev_bottom = self.y
         self.y += self.vy * dt
         was_on_ground = self.on_ground
         self.on_ground = False
+
         for platform in platforms:
-            if not self._overlaps(platform):
+            if self.right <= platform.left or self.left >= platform.right:
                 continue
             if self.vy <= 0.0:
-                self.y = platform.top
-                if not was_on_ground and fall_speed < -240.0:
-                    self.just_landed = True
-                    self.land_speed = -fall_speed
-            else:
-                self.y = platform.bottom - self.HITBOX_H
-            self.vy = 0.0
-            break
-
-        # 낙하 중 발이 바닥에 닿으면 on_ground 로 표시
-        if not self.on_ground and self.vy <= 0.0:
-            probe = self.bottom - 2.0
-            for platform in platforms:
-                if (
-                    self.left < platform.right
-                    and self.right > platform.left
-                    and probe <= platform.top
-                    and probe >= platform.top - 12.0
-                    and self.y >= platform.top - 0.5
-                ):
+                landed = (
+                    prev_bottom >= platform.top - 0.5
+                    and self.y <= platform.top
+                )
+                if landed or (not platform.one_way and self._overlaps(platform)):
                     self.y = platform.top
                     self.vy = 0.0
                     self.on_ground = True
+                    if not was_on_ground and fall_speed < -240.0:
+                        self.just_landed = True
+                        self.land_speed = -fall_speed
                     break
+            elif not platform.one_way and self._overlaps(platform):
+                self.y = platform.bottom - self.HITBOX_H
+                self.vy = 0.0
+                break
 
         self.x = max(self.limit_left, min(self.limit_right, self.x))
 
@@ -423,20 +453,29 @@ class Girl:
         if self.invuln > 0.0 and self.state != "retire" and int(self.invuln * 18) % 2 == 0:
             return
 
+        sheet_name = self._sheet_name()
         bob = 0.0
+        lean = 0.0
         if self.state == "idle":
             bob = math.sin(time * 3.2) * 1.5
         elif self.state == "run":
-            bob = -abs(math.sin(time * 16.0)) * 3.0
+            # 발이 땅에서 살짝 떨어지는 바운스 + 진행 방향으로의 기울기.
+            # (달리기 전용 시트가 없어서 대기 프레임을 쓰기 때문에 필요하다)
+            bob = abs(math.sin(time * 15.0)) * 2.5
+            lean = -RUN_LEAN * self.facing
 
         frame = self._frame_index()
         left, bottom, width, height = _cell_rect(frame)
-        sheet = _sheet(self._sheet_name())
+        sheet = _sheet(sheet_name)
         flip = "h" if self.facing < 0 else ""
         screen_x = self.x - camera_x + shake_x
-        center_y = self.y + DRAW_H * 0.5 - FOOT_PAD + bob
+        if sheet_name == "retire":
+            pad = RETIRE_PAD[min(frame, len(RETIRE_PAD) - 1)] * SCALE
+        else:
+            pad = FOOT_PAD[sheet_name] * SCALE
+        center_y = self.y + DRAW_H * 0.5 - pad + bob
         sheet.clip_composite_draw(
-            left, bottom, width, height, 0.0, flip,
+            left, bottom, width, height, lean, flip,
             screen_x, center_y, DRAW_W, DRAW_H,
         )
 
@@ -456,7 +495,7 @@ class Girl:
         sheet = _sheet("idle")
         w = 307 * scale
         h = CELL_H * scale
-        center_y = y + h * 0.5 - 34 * scale
+        center_y = y + h * 0.5 - FOOT_PAD["idle"] * scale
         flip = "h" if facing < 0 else ""
         sheet.clip_composite_draw(
             left, bottom, width, height, 0.0, flip,
