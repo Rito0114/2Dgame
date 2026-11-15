@@ -32,10 +32,12 @@ GROUND = 140
 WORLD_W = 7000
 FPS = 60
 
-# 배경 산맥은 카메라 시차 이동을 모두 덮을 만큼 넓게 한 번만 구워 둔다.
-BG_FAR_W = WIDTH + int(WORLD_W * 0.12) + 80
-BG_NEAR_W = WIDTH + int(WORLD_W * 0.28) + 80
-BG_STRIP_H = 260
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BG_FILE = os.path.join(BASE_DIR, "background.png")
+ROAD_FILE = os.path.join(BASE_DIR, "road.png")
+BG_PARALLAX = 0.2
+# road.png 는 4344x724 이고, 포장 윗면이 이미지 아래에서 152px 위에 있다.
+ROAD_TOP = 152
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -538,21 +540,8 @@ class World:
         self.checkpoints = []
         self.goal_x = 6720
         self.goal_y = GROUND
-        self.stars = []
-        self._bg_sky = None
-        self._bg_moon = None
-        self._bg_far = None
-        self._bg_near = None
-        rng = random.Random(11)
-        for _ in range(80):
-            self.stars.append(
-                (
-                    rng.uniform(0, WIDTH + 200),
-                    rng.uniform(260, 700),
-                    rng.choice((1, 1, 1, 2, 2, 3)),
-                    rng.uniform(0.0, math.tau),
-                )
-            )
+        self._bg = None
+        self._road = None
         self._build()
 
     # ------------------------------------------------------------------
@@ -689,104 +678,51 @@ class World:
     # ------------------------------------------------------------------
     # 배경
     # ------------------------------------------------------------------
-    def _paint_sky(self):
-        # 하늘 그라데이션
-        bands = 30
-        for i in range(bands):
-            f = i / (bands - 1)
-            r = int(92 + (10 - 92) * f)
-            g = int(56 + (12 - 56) * f)
-            b = int(112 + (34 - 112) * f)
-            y1 = i * (HEIGHT / bands)
-            y2 = y1 + HEIGHT / bands + 1
-            pico2d.draw_rectangle(0, y1, WIDTH, y2, r, g, b, filled=True)
-
-        # 별 (아주 느리게 흐르는 배경이라 하늘에 함께 구워 둔다)
-        for sx, sy, size, phase in self.stars:
-            alpha = 90 + int(110 * abs(math.sin(phase)))
-            pico2d.draw_rectangle(sx, sy, sx + size, sy + size,
-                                  220, 225, 255, alpha, filled=True)
-
-    def _paint_foreground(self):
-        # 지평선 안개 (산맥 위에 덮인다)
-        for i in range(6):
-            alpha = 26 - i * 4
-            pico2d.draw_rectangle(
-                0, GROUND + i * 14, WIDTH, GROUND + (i + 1) * 14 + 1,
-                160, 120, 200, alpha, filled=True,
-            )
-
-        # 땅 아래(구멍으로 보이는 어두운 골짜기)
-        pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 10, 10, 26, filled=True)
-
-    def _paint_moon(self):
-        mx = my = 104
-        pico2d.draw_circle(mx, my, 96, 255, 226, 180, 14, filled=True)
-        pico2d.draw_circle(mx, my, 72, 255, 226, 180, 22, filled=True)
-        pico2d.draw_circle(mx, my, 54, 244, 238, 212, 255, filled=True)
-        pico2d.draw_circle(mx - 16, my + 12, 10, 210, 200, 180, 255,
-                           filled=True)
-        pico2d.draw_circle(mx + 18, my - 14, 7, 210, 200, 180, 255,
-                           filled=True)
-        pico2d.draw_circle(mx + 4, my + 28, 5, 214, 204, 184, 255,
-                           filled=True)
-
-    def _paint_ridges(self, canvas_w, near):
-        if near:
-            y0, color = 60, (24, 20, 54)
-        else:
-            y0, color = 80, (38, 30, 76)
-        for x in range(0, canvas_w, 16):
-            if near:
-                h = (62 + 34 * math.sin(x * 0.009 + 2.2)
-                     + 18 * math.sin(x * 0.023))
-                h = max(25, h)
-            else:
-                h = (95 + 55 * math.sin(x * 0.006)
-                     + 28 * math.sin(x * 0.017 + 1.7))
-                h = max(35, h)
-            pico2d.draw_rectangle(x, y0, x + 17, y0 + h,
-                                  color[0], color[1], color[2], filled=True)
-
     def _ensure_background(self):
-        if self._bg_sky is not None:
-            return
-        a = art()
-        self._bg_sky = a.bake("bg_sky", WIDTH, HEIGHT, self._paint_sky)
-        self._bg_moon = a.bake("bg_moon", 208, 208, self._paint_moon)
-        self._bg_far = a.bake(
-            "bg_far", BG_FAR_W, BG_STRIP_H,
-            lambda: self._paint_ridges(BG_FAR_W, near=False),
-        )
-        self._bg_near = a.bake(
-            "bg_near", BG_NEAR_W, BG_STRIP_H,
-            lambda: self._paint_ridges(BG_NEAR_W, near=True),
-        )
-        self._bg_fore = a.bake("bg_fore", WIDTH, GROUND + 96,
-                               self._paint_foreground)
+        if self._bg is None:
+            self._bg = pico2d.load_image(BG_FILE)
+            self._road = pico2d.load_image(ROAD_FILE)
 
     def draw_background(self, camera_x, time, shake_x=0.0):
         self._ensure_background()
         a = art()
-        # 하늘 + 별 + 안개 + 골짜기 (한 장)
-        a.blit(self._bg_sky, WIDTH * 0.5, HEIGHT * 0.5, WIDTH, HEIGHT)
-
-        # 달
-        mx = 1040 - camera_x * 0.05 + shake_x * 0.1
-        a.blit(self._bg_moon, mx, 552)
-
-        # 멀리 있는 산맥 / 가까운 언덕
-        a.blit_to(self._bg_far, -camera_x * 0.12, 0,
-                  BG_FAR_W, BG_STRIP_H)
-        a.blit_to(self._bg_near, -camera_x * 0.28, 0,
-                  BG_NEAR_W, BG_STRIP_H)
-
-        # 지평선 안개 + 골짜기 (산맥 위에)
-        a.blit_to(self._bg_fore, 0, 0, WIDTH, GROUND + 96)
+        # 배경은 가로로 이어 붙여서 카메라 시차에 따라 반복한다.
+        bg_w = self._bg.w
+        offset = (-camera_x * BG_PARALLAX + shake_x * 0.1) % bg_w
+        a.blit_to(self._bg, offset - bg_w, 0, bg_w, self._bg.h)
+        a.blit_to(self._bg, offset, 0, bg_w, self._bg.h)
 
     # ------------------------------------------------------------------
     # 발판
     # ------------------------------------------------------------------
+    def _ground_image(self, p):
+        if p.image is not None:
+            return p.image
+
+        width = p.width
+        height = p.height
+        road = self._road
+        # 포장 윗면이 GROUND 에 오도록, 바닥 아래쪽에서 그림을 맞춘다.
+        road_bottom = (GROUND - ROAD_TOP) - p.bottom
+        road_y = height - road_bottom - road.h
+
+        def paint():
+            pico2d.draw_rectangle(0, 0, width, height, 18, 24, 46,
+                                  filled=True)
+            renderer = art().renderer
+            start = -(int(p.left) % road.w)
+            x = start
+            while x < width:
+                pico2d.SDL_RenderCopy(
+                    renderer, road.texture, None,
+                    pico2d.SDL_Rect(int(x), int(road_y), road.w, road.h),
+                )
+                x += road.w
+
+        key = ("ground", width, height, int(p.left) % road.w)
+        p.image = art().bake(key, width, height, paint)
+        return p.image
+
     def _platform_image(self, p):
         if p.image is not None:
             return p.image
@@ -832,13 +768,17 @@ class World:
         return p.image
 
     def draw_platforms(self, camera_x, shake_x=0.0):
+        self._ensure_background()
         a = art()
         for p in self.platforms:
             x = p.left - camera_x + shake_x
             if x + p.width < -40 or x > WIDTH + 40:
                 continue
-            a.blit_to(self._platform_image(p), x, p.bottom,
-                      p.width, p.height)
+            if p.one_way:
+                image = self._platform_image(p)
+            else:
+                image = self._ground_image(p)
+            a.blit_to(image, x, p.bottom, p.width, p.height)
 
     # ------------------------------------------------------------------
     # 체크포인트 / 골 / 아이템
@@ -1440,10 +1380,11 @@ class Game:
 
     def _draw_title(self):
         a = art()
-        # 무대
-        pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 15, 18, 38, filled=True)
-        pico2d.draw_rectangle(0, GROUND - 7, WIDTH, GROUND,
-                              62, 226, 196, filled=True)
+        # 무대 (플레이 화면과 같은 바닥 그림)
+        road = self.world._road
+        self.world._ensure_background()
+        pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 18, 24, 46, filled=True)
+        a.blit_to(road, 0, GROUND - ROAD_TOP, road.w, road.h)
 
         # 스포트라이트
         a.blit(self._spotlight_image(), 986, GROUND + 200)
