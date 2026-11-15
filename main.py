@@ -1034,7 +1034,7 @@ class Game:
             self.slashes.append(
                 Slash(self.girl, self.girl.facing)
             )
-            self.sfx.play("punch_sound.mp3")
+            self.sfx.play("punch_sound.mp3", 0.5)
             self.burst(
                 self.girl.x + self.girl.facing * 60,
                 self.girl.y + 95,
@@ -1122,6 +1122,7 @@ class Game:
                 # 대쉬 중에 닿은 적은 바로 사망한다.
                 enemy.kill()
                 self.kill_count += 1
+                self.sfx.play("punch_sound.mp3", 0.4)
                 self.impacts.append(PunchImpact(
                     (self.girl.focus_x() + enemy.x) * 0.5,
                     enemy.y + enemy.height * 0.5, self.girl.facing))
@@ -1495,7 +1496,8 @@ def main():
                 elif ev.key == sdl2.SDLK_p and game.state in ("play", "paused"):
                     game.toggle_pause()
                 elif game.state == "play":
-                    game.girl.handle_event(ev)
+                    if game.girl.handle_event(ev):
+                        game.sfx.play("skill_sound.mp3")
                 elif game.state == "title":
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
                                   sdl2.SDLK_r):

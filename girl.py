@@ -189,7 +189,7 @@ class Girl:
                 if "down" in self.keys:
                     self.drop_request = True
             elif key in DASH_KEYS:
-                self.request_dash()
+                return self.request_dash()
             elif key in ATTACK_KEYS:
                 self.request_attack()
         elif event.type == sdl2.SDL_KEYUP:
@@ -218,14 +218,16 @@ class Girl:
         self.attack_id += 1
 
     def request_dash(self):
+        """대쉬를 시작하면 True 를 돌려준다."""
         if self.state in ("retire", "hit") or self.hit_stun > 0:
-            return
+            return False
         if self.dash_timer > 0 or self.dash_cooldown > 0:
-            return
+            return False
         self.dash_timer = self.DASH_TIME
         self.dash_cooldown = self.DASH_COOLDOWN
         self.attack_timer = 0.0
         self.anim_time = 0.0
+        return True
 
     def request_jump(self):
         if self.state == "retire":

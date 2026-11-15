@@ -21,6 +21,7 @@ SFX_VOLUMES = {
     "jump_sound.mp3": mix.MIX_MAX_VOLUME,
     "heal_sound.mp3": int(mix.MIX_MAX_VOLUME * 0.35),
     "coin_sound.mp3": int(mix.MIX_MAX_VOLUME * 0.35),
+    "skill_sound.mp3": mix.MIX_MAX_VOLUME,
 }
 
 _opened = None
@@ -97,7 +98,8 @@ class Sfx:
     def __init__(self):
         self.chunks = {}
 
-    def play(self, file_name):
+    def play(self, file_name, volume=None):
+        """효과음을 재생한다. volume(0~1)을 주면 이번 재생의 음량을 그 값으로 한다."""
         if not _open():
             return
         chunk = self.chunks.get(file_name)
@@ -107,6 +109,10 @@ class Sfx:
             if not chunk:
                 print("[audio] 효과음을 읽을 수 없습니다:", path)
                 return
-            mix.Mix_VolumeChunk(chunk, SFX_VOLUMES.get(file_name, SFX_VOLUME))
             self.chunks[file_name] = chunk
+        if volume is None:
+            level = SFX_VOLUMES.get(file_name, SFX_VOLUME)
+        else:
+            level = int(mix.MIX_MAX_VOLUME * volume)
+        mix.Mix_VolumeChunk(chunk, level)
         mix.Mix_PlayChannel(-1, chunk, 0)
