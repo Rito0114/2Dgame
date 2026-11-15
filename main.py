@@ -25,7 +25,9 @@ import time
 import pico2d
 import sdl2
 
+from background import Background
 from girl import Girl
+from road import Road
 
 WIDTH, HEIGHT = 1280, 720
 GROUND = 140
@@ -35,9 +37,6 @@ FPS = 60
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BG_FILE = os.path.join(BASE_DIR, "background.png")
 ROAD_FILE = os.path.join(BASE_DIR, "road.png")
-BG_PARALLAX = 0.2
-# road.png 는 4344x724 이고, 포장 윗면이 이미지 아래에서 152px 위에 있다.
-ROAD_TOP = 152
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -540,8 +539,8 @@ class World:
         self.checkpoints = []
         self.goal_x = 6720
         self.goal_y = GROUND
-        self._bg = None
-        self._road = None
+        self.background = Background(BG_FILE)
+        self.road = Road(ROAD_FILE)
         self._build()
 
     # ------------------------------------------------------------------
@@ -678,51 +677,12 @@ class World:
     # ------------------------------------------------------------------
     # 배경
     # ------------------------------------------------------------------
-    def _ensure_background(self):
-        if self._bg is None:
-            self._bg = pico2d.load_image(BG_FILE)
-            self._road = pico2d.load_image(ROAD_FILE)
-
     def draw_background(self, camera_x, time, shake_x=0.0):
-        self._ensure_background()
-        a = art()
-        # 배경은 가로로 이어 붙여서 카메라 시차에 따라 반복한다.
-        bg_w = self._bg.w
-        offset = (-camera_x * BG_PARALLAX + shake_x * 0.1) % bg_w
-        a.blit_to(self._bg, offset - bg_w, 0, bg_w, self._bg.h)
-        a.blit_to(self._bg, offset, 0, bg_w, self._bg.h)
+        self.background.draw(art(), camera_x, shake_x)
 
     # ------------------------------------------------------------------
     # 발판
     # ------------------------------------------------------------------
-    def _ground_image(self, p):
-        if p.image is not None:
-            return p.image
-
-        width = p.width
-        height = p.height
-        road = self._road
-        # 포장 윗면이 GROUND 에 오도록, 바닥 아래쪽에서 그림을 맞춘다.
-        road_bottom = (GROUND - ROAD_TOP) - p.bottom
-        road_y = height - road_bottom - road.h
-
-        def paint():
-            pico2d.draw_rectangle(0, 0, width, height, 18, 24, 46,
-                                  filled=True)
-            renderer = art().renderer
-            start = -(int(p.left) % road.w)
-            x = start
-            while x < width:
-                pico2d.SDL_RenderCopy(
-                    renderer, road.texture, None,
-                    pico2d.SDL_Rect(int(x), int(road_y), road.w, road.h),
-                )
-                x += road.w
-
-        key = ("ground", width, height, int(p.left) % road.w)
-        p.image = art().bake(key, width, height, paint)
-        return p.image
-
     def _platform_image(self, p):
         if p.image is not None:
             return p.image
@@ -768,7 +728,6 @@ class World:
         return p.image
 
     def draw_platforms(self, camera_x, shake_x=0.0):
-        self._ensure_background()
         a = art()
         for p in self.platforms:
             x = p.left - camera_x + shake_x
@@ -777,7 +736,8 @@ class World:
             if p.one_way:
                 image = self._platform_image(p)
             else:
-                image = self._ground_image(p)
+                image = self.road.ground(a, p.left, p.bottom, p.width,
+                                         p.height, GROUND, (18, 24, 46))
             a.blit_to(image, x, p.bottom, p.width, p.height)
 
     # ------------------------------------------------------------------
@@ -1381,10 +1341,8 @@ class Game:
     def _draw_title(self):
         a = art()
         # 무대 (플레이 화면과 같은 바닥 그림)
-        road = self.world._road
-        self.world._ensure_background()
         pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 18, 24, 46, filled=True)
-        a.blit_to(road, 0, GROUND - ROAD_TOP, road.w, road.h)
+        self.world.road.draw_top(a, 0, GROUND)
 
         # 스포트라이트
         a.blit(self._spotlight_image(), 986, GROUND + 200)
