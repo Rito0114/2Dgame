@@ -1409,7 +1409,7 @@ class Game:
         # 스포트라이트
         a.blit(self._spotlight_image(), 986, GROUND + 200)
 
-        frame = int(self.time / 0.13) % 10
+        frame = int(self.time / 0.13)
         self.girl.draw_preview(986, STAND_Y + 8, 0.62, frame)
 
         title_x = 430

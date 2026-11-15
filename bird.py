@@ -22,10 +22,10 @@ CELL_H = 400  # 사망 시트의 셀 높이(원본 픽셀)
 CELL_INSET = 3  # 셀 가장자리에서 잘라낼 픽셀 수(가로)
 
 # 화면에 그릴 때 배율(곰과 같은 크기 기준)
-SCALE = 0.42
+SCALE = 0.336
 # 충돌 크기(화면에 보이는 몸통 기준)
-BIRD_WIDTH = 80
-BIRD_HEIGHT = 80
+BIRD_WIDTH = 64
+BIRD_HEIGHT = 64
 
 FLY_FRAME_TIME = 0.09
 ATTACK_FRAME_TIME = 0.06

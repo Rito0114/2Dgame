@@ -17,15 +17,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # --- 스프라이트 시트 정보 -------------------------------------------------
 SHEET_FILES = {
     "idle": os.path.join("sprites", "girl", "idle_sprite.png"),
+    "idle2": os.path.join("sprites", "girl", "idle_sprite2.png"),
     "jump": os.path.join("sprites", "girl", "jump_sprite.png"),
-    "attack": os.path.join("sprites", "girl", "attack_sprite.png"),
+    "attack": os.path.join("sprites", "girl", "attack_sprite2.png"),
     "hit": os.path.join("sprites", "girl", "hit_sprite.png"),
-    "retire": os.path.join("sprites", "girl", "retire_sprite.png"),
+    "retire": os.path.join("sprites", "girl", "retire_sprite2.png"),
     "run": os.path.join("sprites", "girl", "run_sprite4.png"),
 }
 # 시트별 (열 수, 행 수). 대부분 5x2 이고, 달리기는 20프레임(5x4)이다.
 SHEET_GRID = {
     "idle": (5, 2),
+    "idle2": (5, 1),
     "jump": (5, 2),
     "attack": (5, 2),
     "hit": (5, 2),
@@ -36,7 +38,16 @@ SHEET_GRID = {
 # 화면에 그릴 때 크기(원본 307x512 셀을 0.38배로 축소)
 SCALE = 0.38
 # 달리기 시트는 머리가 상대적으로 커서, 화면에서 머리 폭이 대기 자세와 같도록 줄인다.
-SHEET_SCALE = {"run": 0.531}
+SHEET_SCALE = {"run": 0.531, "idle2": 0.46, "attack": 0.48, "retire": 0.44}
+# 공격(attack_sprite2.png, 5x2) 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px)
+ATTACK2_PAD = (29, 31, 32, 32, 32, 43, 43, 41, 40, 40)
+# 대기 애니메이션(idle_sprite2.png, 5프레임)은 1 2 3 4 5 4 3 2 를 무한 반복한다.
+IDLE2_CYCLE = (0, 1, 2, 3, 4, 3, 2, 1)
+# 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px)
+IDLE2_PAD = (18, 20, 23, 25, 27)
+# 프레임마다 캐릭터 가로 중심(셀 안 x, 원본 px). 중심축이 흔들리지 않도록 맞춘다.
+IDLE2_CENTER_X = (94.5, 102.5, 113.5, 120.5, 127.5)
+IDLE2_CELL_CENTER = 113.5
 
 # 시트마다 셀 아래쪽 여백(캐릭터 발이 셀 바닥에서 얼마나 떨어져 있는지)이 다르다.
 # 실측값(px, 원본 기준)을 시트별로 보정해서 시트를 바꿔도 발 높이가 크게 튀지 않게 한다.
@@ -49,7 +60,8 @@ FOOT_PAD = {
 }
 # 사망 모션은 몸이 바닥으로 내려앉는 동작이라, 프레임마다 가장 낮은 픽셀이
 # 정확히 발밑 좌표에 오도록 맞춰야 땅에 뜨거나 파묻히지 않는다.
-RETIRE_PAD = (37, 37, 40, 32, 32, 63, 64, 63, 60, 56)
+# retire_sprite2.png(5x2, 셀 250x400): 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px)
+RETIRE2_PAD = (29, 29, 32, 26, 26, 56, 57, 56, 54, 51)
 # 달리기 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px). 발이 땅에 붙도록 보정한다.
 RUN_PAD = (9, 13, 8, 8, 8, 11, 10, 9, 9, 8, 9, 13, 8, 8, 8, 12, 11, 10, 10, 9)
 
@@ -80,6 +92,12 @@ def _cell_rect(name, frame):
     top = int(round(row * sheet.h / rows))
     bottom_row = int(round((row + 1) * sheet.h / rows))
     return left, sheet.h - bottom_row, right - left, bottom_row - top
+
+
+def idle2_shift(frame, scale, facing):
+    """대기 프레임의 중심 차이를 상쇄하는 가로 이동량(화면 px)."""
+    rel = IDLE2_CENTER_X[frame] - IDLE2_CELL_CENTER
+    return -rel * scale * (-1.0 if facing < 0 else 1.0)
 
 
 class Girl:
@@ -470,7 +488,7 @@ class Girl:
     def _frame_index(self):
         t = self.anim_time
         if self.state == "idle":
-            return int(t / 0.13) % 10
+            return IDLE2_CYCLE[int(t / 0.13) % len(IDLE2_CYCLE)]
         if self.state == "run":
             return int(t / 0.035) % 20
         if self.state == "jump":
@@ -488,9 +506,11 @@ class Girl:
     def _sheet_name(self):
         if self.state in ("run", "jump"):
             return self.state
-        if self.state in ("idle", "attack", "hit", "retire"):
+        if self.state == "idle":
+            return "idle2"
+        if self.state in ("attack", "hit", "retire"):
             return self.state
-        return "idle"
+        return "idle2"
 
     def draw(self, camera_x, shake_x=0.0, time=0.0):
         # 피격 직후에는 깜빡인다.
@@ -510,10 +530,16 @@ class Girl:
         draw_h = height * scale
         flip = "h" if self.facing < 0 else ""
         screen_x = self.x - camera_x + shake_x
+        if sheet_name == "idle2":
+            screen_x += idle2_shift(frame, scale, self.facing)
         if sheet_name == "retire":
-            pad = RETIRE_PAD[min(frame, len(RETIRE_PAD) - 1)]
+            pad = RETIRE2_PAD[min(frame, len(RETIRE2_PAD) - 1)]
         elif sheet_name == "run":
             pad = RUN_PAD[frame]
+        elif sheet_name == "idle2":
+            pad = IDLE2_PAD[frame]
+        elif sheet_name == "attack":
+            pad = ATTACK2_PAD[frame]
         else:
             pad = FOOT_PAD[sheet_name]
         center_y = self.y + draw_h * 0.5 - pad * scale + bob
@@ -534,11 +560,15 @@ class Girl:
 
     def draw_preview(self, x, y, scale=0.7, frame=0, facing=1):
         """타이틀 화면용 큰 미리보기."""
-        left, bottom, width, height = _cell_rect("idle", frame)
-        sheet = _sheet("idle")
+        # 게임 안과 같은 크기가 되도록, 미리보기 배율을 대기 시트 배율에 맞춘다.
+        scale = scale * SHEET_SCALE["idle2"] / SCALE
+        index = IDLE2_CYCLE[frame % len(IDLE2_CYCLE)]
+        left, bottom, width, height = _cell_rect("idle2", index)
+        sheet = _sheet("idle2")
         w = width * scale
         h = height * scale
-        center_y = y + h * 0.5 - FOOT_PAD["idle"] * scale
+        center_y = y + h * 0.5 - IDLE2_PAD[index] * scale
+        x += idle2_shift(index, scale, facing)
         flip = "h" if facing < 0 else ""
         sheet.clip_composite_draw(
             left, bottom, width, height, 0.0, flip,
