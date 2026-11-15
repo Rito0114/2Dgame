@@ -33,6 +33,7 @@ from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
 from fence import Fence
 from dash import SkillBackground
 from girl import Girl
+from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from punch import DURATION as PUNCH_DURATION
 from punch import draw_punch
@@ -408,26 +409,6 @@ class Slash:
         if self.life <= 0:
             return
         draw_punch(self.x - camera_x + shake_x, self.y, self.facing, self.elapsed)
-
-class Coin:
-    __slots__ = ("x", "y", "phase", "taken")
-
-    def __init__(self, x, y, phase):
-        self.x = x
-        self.y = y
-        self.phase = phase
-        self.taken = False
-
-
-class HeartPickup:
-    __slots__ = ("x", "y", "phase", "taken")
-
-    def __init__(self, x, y, phase):
-        self.x = x
-        self.y = y
-        self.phase = phase
-        self.taken = False
-
 
 class Checkpoint:
     __slots__ = ("x", "y", "active")
@@ -844,28 +825,14 @@ class World:
                               self.goal_y + 8, 34, 60, 80, filled=True)
 
     def draw_coins(self, camera_x, time, shake_x=0.0):
-        image = coin_image()
         a = art()
         for coin in self.coins:
-            if coin.taken:
-                continue
-            x = coin.x - camera_x + shake_x
-            if x < -30 or x > WIDTH + 30:
-                continue
-            y = coin.y + math.sin(time * 4.0 + coin.phase) * 5
-            a.blit(image, x, y)
+            coin.draw(a, camera_x, time, shake_x)
 
     def draw_hearts(self, camera_x, time, shake_x=0.0):
-        image = heart_pickup_image()
         a = art()
         for heart in self.hearts:
-            if heart.taken:
-                continue
-            x = heart.x - camera_x + shake_x
-            if x < -40 or x > WIDTH + 40:
-                continue
-            y = heart.y + math.sin(time * 3.0 + heart.phase) * 6
-            a.blit(image, x, y)
+            heart.draw(a, camera_x, time, shake_x)
 
     # ------------------------------------------------------------------
     # HUD / 화면 효과
@@ -907,29 +874,6 @@ def draw_heart_shape(cx, cy, size, color, filled=True):
         pico2d.draw_line(cx + size * 0.55, cy + size * 0.12,
                          cx, cy - size * 0.55,
                          color[0], color[1], color[2], 255)
-
-
-def coin_image():
-    """코인 그림(빛무리 + 몸통 + 하이라이트)을 한 장으로 굽는다."""
-    def paint():
-        cx = cy = 24
-        pico2d.draw_circle(cx, cy, 18, 255, 200, 80, 26, filled=True)
-        pico2d.draw_circle(cx, cy, 11, 255, 206, 74, 255, filled=True)
-        pico2d.draw_circle(cx, cy + 1, 6, 255, 242, 170, 255, filled=True)
-        pico2d.draw_line(cx - 5, cy + 5, cx + 2, cy + 12,
-                         255, 255, 230, 200)
-
-    return art().bake("coin", 48, 48, paint)
-
-
-def heart_pickup_image():
-    """하트 픽업 그림(빛무리 + 하트 + 하이라이트)을 한 장으로 굽는다."""
-    def paint():
-        pico2d.draw_circle(38, 38, 24, 255, 90, 130, 30, filled=True)
-        draw_heart_shape(38, 38, 30, (255, 92, 128))
-        draw_heart_shape(32, 43, 10, (255, 210, 220))
-
-    return art().bake("heart_pickup", 76, 76, paint)
 
 
 def hud_heart_image(filled):
@@ -1333,21 +1277,18 @@ class Game:
 
     def _draw_hud(self):
         a = art()
-        # 하트
-        for i in range(Girl.MAX_HP):
-            a.blit(hud_heart_image(i < self.girl.hp), 38 + i * 38,
-                   HEIGHT - 52)
-        self.text.draw(24, 30, HEIGHT - 96,
+        # 점수
+        self.text.draw(24, 30, HEIGHT - 52,
                        "SCORE %06d" % self.score, (230, 236, 250))
-        # 코인
-        a.blit(coin_image(), WIDTH - 156, HEIGHT - 56, 28, 28)
-        self.text.draw(24, WIDTH - 134, HEIGHT - 56,
+        # 코인 (점수 바로 아래)
+        a.blit(coin_image(), 44, HEIGHT - 94, 28, 28)
+        self.text.draw(24, 66, HEIGHT - 94,
                        "x %02d" % self.coin_count, (240, 220, 150))
         minutes = int(self.play_time) // 60
         seconds = int(self.play_time) % 60
-        self.text.draw(20, WIDTH - 134, HEIGHT - 96,
+        self.text.draw(20, WIDTH * 0.5, HEIGHT - 56,
                        "TIME %02d:%02d" % (minutes, seconds),
-                       (170, 190, 220))
+                       (170, 190, 220), align="center")
 
         # 진행도
         bar_left, bar_right, bar_y = 430, 850, HEIGHT - 26
@@ -1358,9 +1299,6 @@ class Game:
                               60, 220, 190, filled=True)
         a.blit(a.disc((150, 255, 235)), px, bar_y, 10, 10)
 
-        self.text.draw(16, 30, 26,
-                       "A / D 이동   SPACE 점프   J 공격   P 일시정지",
-                       (120, 136, 172), shadow=None)
         self._draw_fps(WIDTH - 24, HEIGHT - 26, align="right")
 
     def _draw_fps(self, x, y, align="left"):
