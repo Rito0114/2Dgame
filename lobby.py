@@ -5,8 +5,15 @@ SPACE 를 누르면 게임이 시작된다. 그리기만 담당하며, 키 처�
 """
 
 import math
+import os
 
 import pico2d
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGO_FILE = os.path.join(BASE_DIR, "sprites", "UI", "logo.png")
+LOGO_WIDTH = 960  # 로고 가로 길이(px). 이전의 2배.
+LOGO_CENTER_Y = 400
+PROMPT_Y = 200
 
 
 class Lobby:
@@ -17,6 +24,12 @@ class Lobby:
         self.stand_y = stand_y
         self._spotlight = None
         self._glow = None
+        self._logo = None
+
+    def _logo_image(self):
+        if self._logo is None:
+            self._logo = pico2d.load_image(LOGO_FILE)
+        return self._logo
 
     def _spotlight_image(self, a):
         if self._spotlight is None:
@@ -46,33 +59,18 @@ class Lobby:
         # 스포트라이트
         a.blit(self._spotlight_image(a), 986, self.ground_y + 200)
 
-        frame = int(game.time / 0.13)
-        game.girl.draw_preview(986, self.stand_y + 8, 0.62, frame)
-
-        title_x = 430
-        a.blit(self._glow_image(a), title_x, 500)
-        game.text.draw(72, title_x, 520, "그림자 소녀",
-                       (246, 242, 255), "center", shadow=(52, 20, 80))
-        game.text.draw(22, title_x, 462, "S H A D O W   G I R L",
-                       (140, 230, 230), "center")
-        game.text.draw(19, title_x, 420,
-                       "어둠이 삼킨 숲을 지나 빛의 문으로",
-                       (170, 170, 215), "center")
+        center_x = self.width * 0.5
+        a.blit(self._glow_image(a), center_x, LOGO_CENTER_Y)
+        logo = self._logo_image()
+        logo_height = LOGO_WIDTH * logo.h / logo.w
+        a.blit(logo, center_x, LOGO_CENTER_Y, LOGO_WIDTH, logo_height)
 
         blink = abs(math.sin(game.time * 2.2))
         if blink > 0.25:
-            game.text.draw(28, title_x, 330,
+            game.text.draw(28, center_x, PROMPT_Y,
                            "SPACE 키를 눌러 시작",
                            (255, 236, 190), "center")
 
-        game.text.draw(18, 60, 250,
-                       "A / D  또는  ← / →    이동", (200, 210, 235))
-        game.text.draw(18, 60, 218,
-                       "SPACE / W / ↑         점프", (200, 210, 235))
-        game.text.draw(18, 60, 186,
-                       "J / X                 공격", (200, 210, 235))
-        game.text.draw(18, 60, 154,
-                       "P                     일시정지", (150, 160, 190))
         if game.best_score > 0:
             game.text.draw(18, self.width - 60, 40,
                            "BEST %06d" % game.best_score,
