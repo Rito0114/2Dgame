@@ -26,8 +26,9 @@ import pico2d
 import sdl2
 
 from background import Background
-from bear import (ATTACK_HOLD, BEAR_HEIGHT, BEAR_WIDTH, DEATH_TIME,
-                  draw_bear)
+from bear import BEAR_HEIGHT, BEAR_WIDTH, draw_bear
+from bird import (ATTACK_HOLD, BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME,
+                  FALL_TIME, draw_bird)
 from fence import Fence
 from girl import Girl
 from bench import Bench
@@ -444,8 +445,8 @@ class Checkpoint:
 
 
 class Enemy:
-    WIDTH = {"bear": BEAR_WIDTH, "wisp": 48}
-    HEIGHT = {"bear": BEAR_HEIGHT, "wisp": 46}
+    WIDTH = {"bear": BEAR_WIDTH, "bird": BIRD_WIDTH}
+    HEIGHT = {"bear": BEAR_HEIGHT, "bird": BIRD_HEIGHT}
 
     def __init__(self, kind, x, y, left, right, phase=0.0):
         self.kind = kind
@@ -464,6 +465,8 @@ class Enemy:
         self.anim_time = 0.0
         self.attack_hold = 0.0
         self.death_time = 0.0
+        self.death_y = self.y
+        self.facing = -1
 
     @property
     def top(self):
@@ -481,10 +484,19 @@ class Enemy:
         """girl 과 닿아 있는 동안 공격 모션을 보여 준다."""
         self.attack_hold = ATTACK_HOLD
 
+    def kill(self):
+        self.alive = False
+        self.death_time = 0.0
+        self.death_y = self.y
+
     def update(self, dt, time):
         self.anim_time += dt
         if not self.alive:
             self.death_time += dt
+            if self.kind == "bird":
+                # 사망 모션과 같은 시간 동안 지면(STAND_Y)까지 떨어진다.
+                progress = min(1.0, self.death_time / FALL_TIME)
+                self.y = self.death_y + (STAND_Y - self.death_y) * progress * progress
             return
         self.attack_hold = max(0.0, self.attack_hold - dt)
         if self.kind == "bear":
@@ -496,9 +508,12 @@ class Enemy:
             elif self.x > self.right - half:
                 self.x = self.right - half
                 self.vx = -abs(self.vx)
+            self.facing = 1 if self.vx >= 0 else -1
         else:
-            self.x = self.ax + math.sin(time * 1.1 + self.phase) * 42.0
+            swing = time * 1.1 + self.phase
+            self.x = self.ax + math.sin(swing) * 42.0
             self.y = self.ay + math.sin(time * 2.4 + self.phase) * 16.0
+            self.facing = 1 if math.cos(swing) >= 0.0 else -1
 
     def draw(self, camera_x, time, shake_x=0.0):
         if not self.alive and self.death_time > DEATH_TIME:
@@ -506,38 +521,18 @@ class Enemy:
         x = self.x - camera_x + shake_x
         if x < -80 or x > WIDTH + 80:
             return
-        if self.kind == "bear":
-            facing = 1 if self.vx >= 0 else -1
-            if not self.alive:
-                state, t = "retire", self.death_time
-            elif self.attack_hold > 0.0:
-                state, t = "attack", self.anim_time
-            else:
-                state, t = "walk", self.anim_time
-            draw_bear(self.x, self.y, facing, state, t, camera_x, shake_x)
+        if not self.alive:
+            state, t = "retire", self.death_time
+        elif self.attack_hold > 0.0:
+            state, t = "attack", self.anim_time
         else:
-            self._draw_wisp(x)
-
-    def _draw_wisp(self, x):
-        art().blit(self._wisp_image(), x, self.y + self.height * 0.5)
-
-    def _wisp_image(self):
-        def paint():
-            cx, cy = 48, 64
-            pico2d.draw_circle(cx, cy, 30, 150, 100, 255, 32, filled=True)
-            pico2d.draw_circle(cx, cy, 20, 120, 70, 220, 60, filled=True)
-            pico2d.draw_circle(cx, cy, 12, 200, 160, 255, 255, filled=True)
-            # 꼬리
-            for i, off in enumerate((14, 24, 34)):
-                pico2d.draw_circle(cx, cy - off, 7 - i,
-                                   130, 90, 220, 90 - i * 25, filled=True)
-            # 눈
-            pico2d.draw_circle(cx - 4, cy + 3, 2, 255, 255, 255, 255,
-                               filled=True)
-            pico2d.draw_circle(cx + 4, cy + 3, 2, 255, 255, 255, 255,
-                               filled=True)
-
-        return art().bake("wisp", 96, 128, paint)
+            state, t = "walk", self.anim_time
+        if self.kind == "bear":
+            draw_bear(self.x, self.y, self.facing, state, t, camera_x, shake_x)
+        else:
+            draw_bird(self.x, self.y, self.facing,
+                      "fly" if state == "walk" else state, t,
+                      camera_x, shake_x)
 
 
 class World:
@@ -693,9 +688,9 @@ class World:
                   plat.left, plat.right, random.random() * math.tau)
         )
 
-    def _add_wisp(self, x, y):
+    def _add_bird(self, x, y):
         self.enemies.append(
-            Enemy("wisp", x, y - FLOAT_DROP, x - 50, x + 50,
+            Enemy("bird", x, y - FLOAT_DROP, x - 50, x + 50,
                   random.random() * math.tau)
         )
 
@@ -745,13 +740,13 @@ class World:
             self._add_bear_on_surface()
 
         # 위습(날아다니는 적)
-        self._add_wisp(1350, 300)
-        self._add_wisp(2200, 430)
-        self._add_wisp(3200, 330)
-        self._add_wisp(4300, 350)
-        self._add_wisp(5000, 430)
-        self._add_wisp(5750, 320)
-        self._add_wisp(6450, 400)
+        self._add_bird(1350, 300)
+        self._add_bird(2200, 430)
+        self._add_bird(3200, 330)
+        self._add_bird(4300, 350)
+        self._add_bird(5000, 430)
+        self._add_bird(5750, 320)
+        self._add_bird(6450, 400)
 
     # ------------------------------------------------------------------
     # 배경
@@ -1131,11 +1126,11 @@ class Game:
             if not enemy.alive or enemy.last_attack == self.girl.attack_id:
                 continue
             if overlaps(*hitbox, *enemy.rect()):
-                enemy.alive = False
+                enemy.kill()
                 enemy.last_attack = self.girl.attack_id
                 self.score += 100
                 self.shake = max(self.shake, 5.0)
-                color = (160, 120, 255) if enemy.kind == "wisp" else (110, 75, 190)
+                color = (160, 120, 255) if enemy.kind == "bird" else (110, 75, 190)
                 self.burst(enemy.x, enemy.y + enemy.height * 0.5, color,
                            14, 300, 0.55, 4)
 
@@ -1202,11 +1197,11 @@ class Game:
                 and self.girl.y <= ey + eh + 34
             )
             if stomp:
-                enemy.alive = False
+                enemy.kill()
                 self.girl.bounce(700.0)
                 self.score += 150
                 self.shake = max(self.shake, 6.0)
-                color = (160, 120, 255) if enemy.kind == "wisp" else (110, 75, 190)
+                color = (160, 120, 255) if enemy.kind == "bird" else (110, 75, 190)
                 self.burst(enemy.x, enemy.y + enemy.height * 0.5, color,
                            16, 300, 0.55, 4)
             else:
