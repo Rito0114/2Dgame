@@ -1092,7 +1092,7 @@ class Game:
             return
         if abs(self.girl.x - self.world.goal_x) < 46:
             self.state = "clear"
-            self.clear_bonus = int(max(0, 3000 - self.play_time * 25))
+            self.clear_bonus = int(max(0, self.world.spec.time_bonus - self.play_time * 25))
             self.score += self.clear_bonus
             self.best_score = max(self.best_score, self.score)
             self.shake = 8.0
