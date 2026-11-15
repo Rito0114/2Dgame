@@ -8,6 +8,8 @@ import pico2d
 
 # 이미지 아래쪽에서 울타리 아랫단까지의 높이(px). road.png 와 같은 기준이다.
 FENCE_BASE = 152
+# 원본 이미지(4344x724)를 줄여서 쓰는 비율.
+FENCE_SCALE = 0.5
 
 
 class Fence:
@@ -25,20 +27,25 @@ class Fence:
     def segment(self, art, left, width):
         """땅 구간 하나만큼의 울타리 텍스처를 돌려준다. left 는 월드 x."""
         fence = self.image
+        scale = FENCE_SCALE
+        tile_w = int(fence.w * scale)
+        tile_h = int(fence.h * scale)
+        out_w = int(width)
 
         def paint():
-            x = -(int(left) % fence.w)
-            while x < width:
+            x = -(int(left) % tile_w)
+            while x < out_w:
                 pico2d.SDL_RenderCopy(
                     art.renderer, fence.texture, None,
-                    pico2d.SDL_Rect(int(x), 0, fence.w, fence.h),
+                    pico2d.SDL_Rect(int(x), 0, tile_w, tile_h),
                 )
-                x += fence.w
+                x += tile_w
 
-        key = ("fence", width, int(left) % fence.w)
-        return art.bake(key, width, fence.h, paint)
+        key = ("fence", out_w, int(left) % tile_w, tile_w, tile_h)
+        return art.bake(key, out_w, tile_h, paint)
 
     def draw(self, art, left, width, x, ground_y):
         """구간을 화면 x 에 그린다. 울타리 아랫단이 ground_y 에 오도록 한다."""
         image = self.segment(art, left, width)
-        art.blit_to(image, x, ground_y - FENCE_BASE, width, self.image.h)
+        art.blit_to(image, x, ground_y - FENCE_BASE * FENCE_SCALE,
+                    width, image.h)
