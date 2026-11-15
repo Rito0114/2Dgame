@@ -132,6 +132,8 @@ class Girl:
         # 위치(y 는 발밑 좌표)와 속도
         self.x = float(x)
         self.y = float(y)
+        # 시작 높이를 지면 높이로 기억해 둔다(스킬 중 지면 아래로 내려가지 않게 하는 기준).
+        self.ground_y = float(y)
         self.prev_y = self.y
         self.vx = 0.0
         self.vy = 0.0
@@ -493,6 +495,12 @@ class Girl:
                 self.y = platform.bottom - self.HITBOX_H
                 self.vy = 0.0
                 break
+
+        # 대쉬 중과 대쉬 후 무적 시간에는 지면 아래로 내려가지 않는다.
+        if (self.dash_timer > 0.0 or self.dash_invuln > 0.0) and self.y < self.ground_y:
+            self.y = self.ground_y
+            self.vy = 0.0
+            self.on_ground = True
 
         if self.drop_through is not None:
             through = self.drop_through
