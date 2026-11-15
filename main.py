@@ -20,6 +20,7 @@ import math
 import os
 import random
 import sys
+import time
 
 import pico2d
 import sdl2
@@ -30,6 +31,11 @@ WIDTH, HEIGHT = 1280, 720
 GROUND = 140
 WORLD_W = 7000
 FPS = 60
+
+# 배경 산맥은 카메라 시차 이동을 모두 덮을 만큼 넓게 한 번만 구워 둔다.
+BG_FAR_W = WIDTH + int(WORLD_W * 0.12) + 80
+BG_NEAR_W = WIDTH + int(WORLD_W * 0.28) + 80
+BG_STRIP_H = 260
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -86,6 +92,165 @@ def patch_draw_primitives():
     pico2d.draw_line = draw_line
 
 
+# ---------------------------------------------------------------------------
+# 미리 구운 텍스처
+# ---------------------------------------------------------------------------
+class Art:
+    """도형/글자를 텍스처로 미리 구워 프레임당 그리기 호출 수를 줄인다.
+
+    SDL 의 draw_circle 은 채운 원 하나를 수십 번의 draw_line 으로 그린다.
+    (소프트웨어 렌더러나 원격 데스크톱 환경에서는 이 호출 하나하나가 비싸다.)
+    같은 모양을 매 프레임 다시 그리는 대신 한 번만 구워 두고 텍스처로 찍으면
+    화면에 보이는 결과는 거의 같으면서 그리기 비용은 크게 줄어든다.
+    """
+
+    DISC = 64  # 원/발광 텍스처 해상도
+
+    def __init__(self):
+        self.renderer = pico2d.pico2d.renderer
+        self._images = {}
+        self._texts = {}
+
+    # -- 텍스처 굽기 ----------------------------------------------------
+    def bake(self, key, width, height, paint):
+        image = self._images.get(key)
+        if image is not None:
+            return image
+        width = max(1, int(width))
+        height = max(1, int(height))
+        texture = pico2d.SDL_CreateTexture(
+            self.renderer,
+            pico2d.SDL_PIXELFORMAT_RGBA8888,
+            pico2d.SDL_TEXTUREACCESS_TARGET,
+            width,
+            height,
+        )
+        pico2d.SDL_SetTextureBlendMode(texture, pico2d.SDL_BLENDMODE_BLEND)
+        try:
+            pico2d.SDL_SetTextureScaleMode(texture, pico2d.SDL_ScaleModeLinear)
+        except Exception:
+            pass
+        pico2d.SDL_SetRenderTarget(self.renderer, texture)
+        pico2d.SDL_SetRenderDrawColor(self.renderer, 0, 0, 0, 0)
+        pico2d.SDL_RenderClear(self.renderer)
+        # pico2d 의 도형 함수는 y 를 전역 canvas_height 기준으로 뒤집는다.
+        # 작은 텍스처에 구울 때는 그 높이를 잠시 바꿔 좌표를 텍스처 기준으로
+        # 맞춘다. (그러지 않으면 그림이 텍스처 밖으로 나가 빈 텍스처가 된다.)
+        module = pico2d.pico2d
+        saved_height = module.canvas_height
+        module.canvas_height = height
+        try:
+            paint()
+        finally:
+            module.canvas_height = saved_height
+            pico2d.SDL_SetRenderTarget(self.renderer, None)
+        image = pico2d.Image(texture)
+        self._images[key] = image
+        return image
+
+    # -- 그리기 ---------------------------------------------------------
+    def blit(self, image, x, y, width=None, height=None, alpha=255):
+        """이미지를 (x, y) 중심으로 그린다. (y 는 화면 좌표계)"""
+        if image is None:
+            return
+        if width is None:
+            width = image.w
+        if height is None:
+            height = image.h
+        mod = max(0, min(255, int(alpha)))
+        if getattr(image, "_art_alpha", None) != mod:
+            pico2d.SDL_SetTextureAlphaMod(image.texture, mod)
+            image._art_alpha = mod
+        rect = pico2d.SDL_Rect(
+            int(x - width * 0.5),
+            int(HEIGHT - y - height * 0.5),
+            int(width),
+            int(height),
+        )
+        pico2d.SDL_RenderCopy(self.renderer, image.texture, None, rect)
+
+    def blit_to(self, image, left, bottom, width=None, height=None, alpha=255):
+        """이미지를 왼쪽 아래 (left, bottom) 기준으로 그린다."""
+        if width is None:
+            width = image.w
+        if height is None:
+            height = image.h
+        self.blit(image, left + width * 0.5, bottom + height * 0.5,
+                  width, height, alpha)
+
+    # -- 원 / 발광 ------------------------------------------------------
+    def disc(self, color, glow=False):
+        color = tuple(int(c) for c in color)
+        key = ("disc", color, glow)
+        image = self._images.get(key)
+        if image is not None:
+            return image
+
+        size = self.DISC
+        radius = size * 0.5 - 1.0
+        cx = cy = size * 0.5
+
+        def paint():
+            if glow:
+                # 바깥으로 갈수록 투명해지는 부드러운 발광.
+                for r in range(int(radius), 0, -1):
+                    t = r / radius
+                    a = int(255 * (1.0 - t) ** 2)
+                    if a > 0:
+                        pico2d.draw_circle(cx, cy, r, color[0], color[1],
+                                           color[2], a, filled=True)
+            else:
+                # 바깥 1~2px 만 반투명하게 해서 축소해도 각져 보이지 않게.
+                for r in range(int(radius), 0, -1):
+                    t = r / radius
+                    if t > 0.86:
+                        a = int(255 * (1.0 - t) / 0.14)
+                    else:
+                        a = 255
+                    if a > 0:
+                        pico2d.draw_circle(cx, cy, r, color[0], color[1],
+                                           color[2], a, filled=True)
+
+        image = self.bake(key, size, size, paint)
+        return image
+
+    # -- 글자 -----------------------------------------------------------
+    def text(self, font, size, text, color):
+        color = tuple(int(c) for c in color)
+        key = (size, text, color)
+        image = self._texts.get(key)
+        if image is not None:
+            return image
+        if len(self._texts) > 640:
+            # 점수/시간처럼 계속 바뀌는 문자열이 쌓이는 것을 막는다.
+            self._texts.clear()
+        sdl_color = pico2d.SDL_Color(color[0], color[1], color[2])
+        surface = pico2d.TTF_RenderUTF8_Blended(
+            font.font, text.encode("utf-8"), sdl_color
+        )
+        if not surface:
+            return None
+        texture = pico2d.SDL_CreateTextureFromSurface(self.renderer, surface)
+        pico2d.SDL_FreeSurface(surface)
+        image = pico2d.Image(texture)
+        try:
+            pico2d.SDL_SetTextureScaleMode(texture, pico2d.SDL_ScaleModeLinear)
+        except Exception:
+            pass
+        self._texts[key] = image
+        return image
+
+
+_ART = None
+
+
+def art():
+    global _ART
+    if _ART is None:
+        _ART = Art()
+    return _ART
+
+
 class TextRenderer:
     """폰트 캐시 + 가운데 정렬을 지원하는 텍스트 도우미."""
 
@@ -119,12 +284,17 @@ class TextRenderer:
         elif align == "right":
             x -= self.measure(size, text)
         if shadow is not None:
-            self.font(size).draw(x + 2, y - 2, text, shadow)
-        self.font(size).draw(x, y, text, color)
+            self._draw(size, x + 2, y - 2, text, shadow)
+        self._draw(size, x, y, text, color)
+
+    def _draw(self, size, x, y, text, color):
+        image = art().text(self.font(size), size, text, color)
+        if image is not None:
+            art().blit(image, x + image.w * 0.5, y)
 
 
 class Platform:
-    __slots__ = ("left", "bottom", "width", "height", "one_way")
+    __slots__ = ("left", "bottom", "width", "height", "one_way", "image")
 
     def __init__(self, left, bottom, width, height, one_way=False):
         self.left = left
@@ -133,6 +303,8 @@ class Platform:
         self.height = height
         # one_way(단방향) 발판은 아래에서 점프해 통과하고, 위에서만 착지한다.
         self.one_way = one_way
+        # 발판 그림은 처음 그릴 때 한 번만 구워서 재사용한다.
+        self.image = None
 
     @property
     def right(self):
@@ -170,12 +342,15 @@ class Particle:
             return
         alpha = int(255 * max(0.0, self.life / self.max_life))
         radius = max(1, int(self.radius * (0.4 + 0.6 * self.life / self.max_life)))
-        pico2d.draw_circle(
+        draw = art()
+        image = draw.disc(self.color)
+        draw.blit(
+            image,
             self.x - camera_x + shake_x,
             self.y,
-            radius,
-            self.color[0], self.color[1], self.color[2], alpha,
-            filled=True,
+            radius * 2,
+            radius * 2,
+            alpha,
         )
 
 
@@ -297,46 +472,61 @@ class Enemy:
         if x < -80 or x > WIDTH + 80:
             return
         if self.kind == "slime":
-            self._draw_slime(x, time)
+            self._draw_slime(x)
         else:
-            self._draw_wisp(x, time)
+            self._draw_wisp(x)
 
-    def _draw_slime(self, x, time):
-        squash = 1.0 + math.sin(time * 6.0 + self.phase) * 0.06
-        y = self.y
-        # 그림자
-        pico2d.draw_circle(x, y + 5, 25, 8, 8, 20, 90, filled=True)
-        # 몸통(원 3개를 겹쳐서 슬라임 모양)
-        pico2d.draw_circle(x - 13, y + 17, 20, 28, 18, 48, 255, filled=True)
-        pico2d.draw_circle(x + 13, y + 17, 20, 28, 18, 48, 255, filled=True)
-        pico2d.draw_circle(x, y + 24 * squash, 22, 38, 24, 66, 255, filled=True)
-        # 하이라이트
-        pico2d.draw_circle(x - 8, y + 34, 7, 92, 62, 140, 220, filled=True)
-        # 눈
-        eye = 4 if self.vx >= 0 else -4
-        pico2d.draw_circle(x - 8 + eye, y + 26, 5, 170, 255, 230, 255, filled=True)
-        pico2d.draw_circle(x + 8 + eye, y + 26, 5, 170, 255, 230, 255, filled=True)
-        pico2d.draw_circle(x - 8 + eye, y + 26, 2, 20, 20, 30, 255, filled=True)
-        pico2d.draw_circle(x + 8 + eye, y + 26, 2, 20, 20, 30, 255, filled=True)
+    def _draw_slime(self, x):
+        art().blit(self._slime_image(), x, self.y)
 
-    def _draw_wisp(self, x, time):
-        y = self.y + self.height * 0.5
-        glow = int(26 + 12 * math.sin(time * 3.0 + self.phase))
-        pico2d.draw_circle(x, y, 30, 150, 100, 255, glow, filled=True)
-        pico2d.draw_circle(x, y, 20, 120, 70, 220, 60, filled=True)
-        pico2d.draw_circle(x, y, 12, 200, 160, 255, 255, filled=True)
-        # 꼬리
-        for i, off in enumerate((14, 24, 34)):
-            pico2d.draw_circle(
-                x + math.sin(time * 4 + i) * 4,
-                y - off,
-                7 - i,
-                130, 90, 220, 90 - i * 25,
-                filled=True,
-            )
-        # 눈
-        pico2d.draw_circle(x - 4, y + 3, 2, 255, 255, 255, 255, filled=True)
-        pico2d.draw_circle(x + 4, y + 3, 2, 255, 255, 255, 255, filled=True)
+    def _slime_image(self):
+        facing = 1 if self.vx >= 0 else -1
+        key = ("slime", facing)
+
+        def paint():
+            cx, base = 48, 48
+            # 그림자
+            pico2d.draw_circle(cx, base + 5, 25, 8, 8, 20, 90, filled=True)
+            # 몸통(원 3개를 겹쳐서 슬라임 모양)
+            pico2d.draw_circle(cx - 13, base + 17, 20, 28, 18, 48, 255,
+                               filled=True)
+            pico2d.draw_circle(cx + 13, base + 17, 20, 28, 18, 48, 255,
+                               filled=True)
+            pico2d.draw_circle(cx, base + 24, 22, 38, 24, 66, 255,
+                               filled=True)
+            # 하이라이트
+            pico2d.draw_circle(cx - 8, base + 34, 7, 92, 62, 140, 220,
+                               filled=True)
+            # 눈
+            eye = 4 * facing
+            for ex in (-8, 8):
+                pico2d.draw_circle(cx + ex + eye, base + 26, 5,
+                                   170, 255, 230, 255, filled=True)
+                pico2d.draw_circle(cx + ex + eye, base + 26, 2,
+                                   20, 20, 30, 255, filled=True)
+
+        return art().bake(key, 96, 96, paint)
+
+    def _draw_wisp(self, x):
+        art().blit(self._wisp_image(), x, self.y + self.height * 0.5)
+
+    def _wisp_image(self):
+        def paint():
+            cx, cy = 48, 64
+            pico2d.draw_circle(cx, cy, 30, 150, 100, 255, 32, filled=True)
+            pico2d.draw_circle(cx, cy, 20, 120, 70, 220, 60, filled=True)
+            pico2d.draw_circle(cx, cy, 12, 200, 160, 255, 255, filled=True)
+            # 꼬리
+            for i, off in enumerate((14, 24, 34)):
+                pico2d.draw_circle(cx, cy - off, 7 - i,
+                                   130, 90, 220, 90 - i * 25, filled=True)
+            # 눈
+            pico2d.draw_circle(cx - 4, cy + 3, 2, 255, 255, 255, 255,
+                               filled=True)
+            pico2d.draw_circle(cx + 4, cy + 3, 2, 255, 255, 255, 255,
+                               filled=True)
+
+        return art().bake("wisp", 96, 128, paint)
 
 
 class World:
@@ -349,6 +539,10 @@ class World:
         self.goal_x = 6720
         self.goal_y = GROUND
         self.stars = []
+        self._bg_sky = None
+        self._bg_moon = None
+        self._bg_far = None
+        self._bg_near = None
         rng = random.Random(11)
         for _ in range(80):
             self.stars.append(
@@ -495,7 +689,7 @@ class World:
     # ------------------------------------------------------------------
     # 배경
     # ------------------------------------------------------------------
-    def draw_background(self, camera_x, time, shake_x=0.0):
+    def _paint_sky(self):
         # 하늘 그라데이션
         bands = 30
         for i in range(bands):
@@ -507,41 +701,14 @@ class World:
             y2 = y1 + HEIGHT / bands + 1
             pico2d.draw_rectangle(0, y1, WIDTH, y2, r, g, b, filled=True)
 
-        # 별
+        # 별 (아주 느리게 흐르는 배경이라 하늘에 함께 구워 둔다)
         for sx, sy, size, phase in self.stars:
-            x = (sx - camera_x * 0.04) % (WIDTH + 200) - 100
-            alpha = 90 + int(110 * abs(math.sin(time * 0.9 + phase)))
-            pico2d.draw_rectangle(x, sy, x + size, sy + size, 220, 225, 255,
-                                  alpha, filled=True)
+            alpha = 90 + int(110 * abs(math.sin(phase)))
+            pico2d.draw_rectangle(sx, sy, sx + size, sy + size,
+                                  220, 225, 255, alpha, filled=True)
 
-        # 달
-        mx = 1040 - camera_x * 0.05 + shake_x * 0.1
-        my = 552
-        pico2d.draw_circle(mx, my, 96, 255, 226, 180, 14, filled=True)
-        pico2d.draw_circle(mx, my, 72, 255, 226, 180, 22, filled=True)
-        pico2d.draw_circle(mx, my, 54, 244, 238, 212, 255, filled=True)
-        pico2d.draw_circle(mx - 16, my + 12, 10, 210, 200, 180, 255, filled=True)
-        pico2d.draw_circle(mx + 18, my - 14, 7, 210, 200, 180, 255, filled=True)
-        pico2d.draw_circle(mx + 4, my + 28, 5, 214, 204, 184, 255, filled=True)
-
-        # 멀리 있는 산맥
-        offset = camera_x * 0.12
-        for x in range(-32, WIDTH + 32, 16):
-            wx = x + offset
-            h = 95 + 55 * math.sin(wx * 0.006) + 28 * math.sin(wx * 0.017 + 1.7)
-            h = max(35, h)
-            pico2d.draw_rectangle(x, 80, x + 17, 80 + h, 38, 30, 76,
-                                  filled=True)
-        # 가까운 언덕
-        offset = camera_x * 0.28
-        for x in range(-32, WIDTH + 32, 16):
-            wx = x + offset
-            h = 62 + 34 * math.sin(wx * 0.009 + 2.2) + 18 * math.sin(wx * 0.023)
-            h = max(25, h)
-            pico2d.draw_rectangle(x, 60, x + 17, 60 + h, 24, 20, 54,
-                                  filled=True)
-
-        # 지평선 안개
+    def _paint_foreground(self):
+        # 지평선 안개 (산맥 위에 덮인다)
         for i in range(6):
             alpha = 26 - i * 4
             pico2d.draw_rectangle(
@@ -552,40 +719,107 @@ class World:
         # 땅 아래(구멍으로 보이는 어두운 골짜기)
         pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 10, 10, 26, filled=True)
 
+    def _paint_moon(self):
+        mx = my = 104
+        pico2d.draw_circle(mx, my, 96, 255, 226, 180, 14, filled=True)
+        pico2d.draw_circle(mx, my, 72, 255, 226, 180, 22, filled=True)
+        pico2d.draw_circle(mx, my, 54, 244, 238, 212, 255, filled=True)
+        pico2d.draw_circle(mx - 16, my + 12, 10, 210, 200, 180, 255,
+                           filled=True)
+        pico2d.draw_circle(mx + 18, my - 14, 7, 210, 200, 180, 255,
+                           filled=True)
+        pico2d.draw_circle(mx + 4, my + 28, 5, 214, 204, 184, 255,
+                           filled=True)
+
+    def _paint_ridges(self, canvas_w, near):
+        if near:
+            y0, color = 60, (24, 20, 54)
+        else:
+            y0, color = 80, (38, 30, 76)
+        for x in range(0, canvas_w, 16):
+            if near:
+                h = (62 + 34 * math.sin(x * 0.009 + 2.2)
+                     + 18 * math.sin(x * 0.023))
+                h = max(25, h)
+            else:
+                h = (95 + 55 * math.sin(x * 0.006)
+                     + 28 * math.sin(x * 0.017 + 1.7))
+                h = max(35, h)
+            pico2d.draw_rectangle(x, y0, x + 17, y0 + h,
+                                  color[0], color[1], color[2], filled=True)
+
+    def _ensure_background(self):
+        if self._bg_sky is not None:
+            return
+        a = art()
+        self._bg_sky = a.bake("bg_sky", WIDTH, HEIGHT, self._paint_sky)
+        self._bg_moon = a.bake("bg_moon", 208, 208, self._paint_moon)
+        self._bg_far = a.bake(
+            "bg_far", BG_FAR_W, BG_STRIP_H,
+            lambda: self._paint_ridges(BG_FAR_W, near=False),
+        )
+        self._bg_near = a.bake(
+            "bg_near", BG_NEAR_W, BG_STRIP_H,
+            lambda: self._paint_ridges(BG_NEAR_W, near=True),
+        )
+        self._bg_fore = a.bake("bg_fore", WIDTH, GROUND + 96,
+                               self._paint_foreground)
+
+    def draw_background(self, camera_x, time, shake_x=0.0):
+        self._ensure_background()
+        a = art()
+        # 하늘 + 별 + 안개 + 골짜기 (한 장)
+        a.blit(self._bg_sky, WIDTH * 0.5, HEIGHT * 0.5, WIDTH, HEIGHT)
+
+        # 달
+        mx = 1040 - camera_x * 0.05 + shake_x * 0.1
+        a.blit(self._bg_moon, mx, 552)
+
+        # 멀리 있는 산맥 / 가까운 언덕
+        a.blit_to(self._bg_far, -camera_x * 0.12, 0,
+                  BG_FAR_W, BG_STRIP_H)
+        a.blit_to(self._bg_near, -camera_x * 0.28, 0,
+                  BG_NEAR_W, BG_STRIP_H)
+
+        # 지평선 안개 + 골짜기 (산맥 위에)
+        a.blit_to(self._bg_fore, 0, 0, WIDTH, GROUND + 96)
+
     # ------------------------------------------------------------------
     # 발판
     # ------------------------------------------------------------------
-    def draw_platforms(self, camera_x, shake_x=0.0):
-        for p in self.platforms:
-            x = p.left - camera_x + shake_x
-            if x + p.width < -40 or x > WIDTH + 40:
-                continue
-            top = p.top
-            bottom = p.bottom
+    def _platform_image(self, p):
+        if p.image is not None:
+            return p.image
+
+        width = p.width
+        height = p.height
+
+        def paint():
+            bottom = 0
+            top = height
             # 본체
-            pico2d.draw_rectangle(x, bottom, x + p.width, top - 12,
+            pico2d.draw_rectangle(0, bottom, width, top - 12,
                                   18, 24, 46, filled=True)
             # 위쪽 잔디/네온 테두리
-            pico2d.draw_rectangle(x, top - 12, x + p.width, top - 7,
+            pico2d.draw_rectangle(0, top - 12, width, top - 7,
                                   34, 116, 126, filled=True)
-            pico2d.draw_rectangle(x, top - 7, x + p.width, top,
+            pico2d.draw_rectangle(0, top - 7, width, top,
                                   62, 226, 196, filled=True)
             # 외곽선
-            pico2d.draw_rectangle(x + 1, bottom + 1, x + p.width - 1, top - 1,
+            pico2d.draw_rectangle(1, bottom + 1, width - 1, top - 1,
                                   44, 60, 100)
             # 두꺼운 땅의 결
-            if p.height > 80:
+            if height > 80:
                 yy = bottom + 30
                 while yy < top - 26:
-                    pico2d.draw_line(x + 8, yy, x + p.width - 8, yy,
-                                     26, 34, 60)
+                    pico2d.draw_line(8, yy, width - 8, yy, 26, 34, 60)
                     yy += 46
             # 잔디 포기
             spacing = 52
             wx = int(p.left // spacing) * spacing
-            while wx < p.left + p.width:
-                sx = wx - camera_x + shake_x
-                if -8 < sx < WIDTH + 8:
+            while wx < p.left + width:
+                sx = wx - p.left
+                if -8 < sx < width + 8:
                     lean = 3 if (wx // spacing) % 2 == 0 else -3
                     pico2d.draw_line(sx, top, sx + lean, top + 9,
                                      58, 222, 192)
@@ -593,56 +827,94 @@ class World:
                                      42, 168, 160)
                 wx += spacing
 
+        key = ("platform", width, height, int(p.left) % 104)
+        p.image = art().bake(key, width, height, paint)
+        return p.image
+
+    def draw_platforms(self, camera_x, shake_x=0.0):
+        a = art()
+        for p in self.platforms:
+            x = p.left - camera_x + shake_x
+            if x + p.width < -40 or x > WIDTH + 40:
+                continue
+            a.blit_to(self._platform_image(p), x, p.bottom,
+                      p.width, p.height)
+
+    # ------------------------------------------------------------------
+    # 체크포인트 / 골 / 아이템
+    # ------------------------------------------------------------------
+    def _checkpoint_image(self, active):
+        def paint():
+            cx = 40
+            color = (90, 240, 210) if active else (90, 100, 140)
+            # 기둥
+            pico2d.draw_rectangle(cx - 4, 0, cx + 4, 104, 24, 30, 54,
+                                  filled=True)
+            pico2d.draw_rectangle(cx - 8, 0, cx + 8, 10, 34, 42, 70,
+                                  filled=True)
+            # 램프
+            pico2d.draw_circle(cx, 118, 30, color[0], color[1], color[2],
+                               30 if active else 12, filled=True)
+            pico2d.draw_circle(cx, 118, 10, color[0], color[1], color[2],
+                               255, filled=True)
+            pico2d.draw_rectangle(cx - 10, 104, cx + 10, 110,
+                                  18, 22, 42, filled=True)
+
+        return art().bake(("checkpoint", active), 80, 160, paint)
+
     def draw_checkpoints(self, camera_x, time, shake_x=0.0):
+        a = art()
         for cp in self.checkpoints:
             x = cp.x - camera_x + shake_x
             if x < -60 or x > WIDTH + 60:
                 continue
-            y = cp.y
-            color = (90, 240, 210) if cp.active else (90, 100, 140)
-            # 기둥
-            pico2d.draw_rectangle(x - 4, y, x + 4, y + 104, 24, 30, 54,
-                                  filled=True)
-            pico2d.draw_rectangle(x - 8, y, x + 8, y + 10, 34, 42, 70,
-                                  filled=True)
-            # 램프
-            pico2d.draw_circle(x, y + 118, 30, color[0], color[1], color[2],
-                               30 if cp.active else 12, filled=True)
-            pico2d.draw_circle(x, y + 118, 10, color[0], color[1], color[2],
-                               255, filled=True)
-            pico2d.draw_rectangle(x - 10, y + 104, x + 10, y + 110,
-                                  18, 22, 42, filled=True)
+            a.blit(self._checkpoint_image(cp.active), x, cp.y + 80)
             if cp.active:
                 flicker = 2 + int(2 * abs(math.sin(time * 7 + cp.x)))
-                pico2d.draw_circle(x, y + 118, 5 + flicker, 240, 255, 250,
-                                   255, filled=True)
+                a.blit(art().disc((240, 255, 250)), x, cp.y + 118,
+                       (5 + flicker) * 2, (5 + flicker) * 2)
+
+    def _goal_images(self):
+        def paint_glow():
+            pico2d.draw_circle(110, 110, 100, 80, 240, 220, 20, filled=True)
+            pico2d.draw_circle(110, 110, 76, 80, 240, 220, 30, filled=True)
+
+        def paint_rings():
+            for radius, alpha in ((82, 90), (72, 160), (62, 210)):
+                for j in range(2):
+                    pico2d.draw_circle(110, 110, radius + j,
+                                       130, 250, 235, alpha)
+
+        glow = art().bake("goal_glow", 220, 220, paint_glow)
+        rings = art().bake("goal_rings", 220, 220, paint_rings)
+        return glow, rings
 
     def draw_goal(self, camera_x, time, shake_x=0.0):
         x = self.goal_x - camera_x + shake_x
         if x < -140 or x > WIDTH + 140:
             return
+        a = art()
         cy = self.goal_y + 108
         pulse = 1.0 + 0.04 * math.sin(time * 3.0)
+        glow, rings = self._goal_images()
         # 빛무리
-        pico2d.draw_circle(x, cy, int(100 * pulse), 80, 240, 220, 20,
-                           filled=True)
-        pico2d.draw_circle(x, cy, int(76 * pulse), 80, 240, 220, 30,
-                           filled=True)
+        a.blit(glow, x, cy, 220 * pulse, 220 * pulse)
         # 포탈 고리
-        for radius, alpha in ((82, 90), (72, 160), (62, 210)):
-            for j in range(2):
-                pico2d.draw_circle(x, cy, radius + j, 130, 250, 235, alpha)
+        a.blit(rings, x, cy, 220, 220)
         # 회전하는 불꽃
+        spark = a.disc((190, 255, 245))
         for i in range(12):
             angle = time * 1.6 + i * math.tau / 12.0
             px = x + math.cos(angle) * 70
             py = cy + math.sin(angle) * 70
-            pico2d.draw_circle(px, py, 4, 190, 255, 245, 220, filled=True)
+            a.blit(spark, px, py, 8, 8)
         # 바닥
         pico2d.draw_rectangle(x - 42, self.goal_y - 6, x + 42,
                               self.goal_y + 8, 34, 60, 80, filled=True)
 
     def draw_coins(self, camera_x, time, shake_x=0.0):
+        image = coin_image()
+        a = art()
         for coin in self.coins:
             if coin.taken:
                 continue
@@ -650,12 +922,11 @@ class World:
             if x < -30 or x > WIDTH + 30:
                 continue
             y = coin.y + math.sin(time * 4.0 + coin.phase) * 5
-            pico2d.draw_circle(x, y, 18, 255, 200, 80, 26, filled=True)
-            pico2d.draw_circle(x, y, 11, 255, 206, 74, 255, filled=True)
-            pico2d.draw_circle(x, y + 1, 6, 255, 242, 170, 255, filled=True)
-            pico2d.draw_line(x - 5, y + 5, x + 2, y + 12, 255, 255, 230, 200)
+            a.blit(image, x, y)
 
     def draw_hearts(self, camera_x, time, shake_x=0.0):
+        image = heart_pickup_image()
+        a = art()
         for heart in self.hearts:
             if heart.taken:
                 continue
@@ -663,18 +934,17 @@ class World:
             if x < -40 or x > WIDTH + 40:
                 continue
             y = heart.y + math.sin(time * 3.0 + heart.phase) * 6
-            pico2d.draw_circle(x, y, 24, 255, 90, 130, 30, filled=True)
-            draw_heart_shape(x, y, 30, (255, 92, 128))
-            draw_heart_shape(x - 6, y + 5, 10, (255, 210, 220))
+            a.blit(image, x, y)
 
     # ------------------------------------------------------------------
     # HUD / 화면 효과
     # ------------------------------------------------------------------
     def draw_motes(self, motes):
+        a = art()
+        image = a.disc((180, 210, 255), glow=True)
         for x, y, speed, radius, phase in motes:
-            alpha = 26 + int(18 * abs(math.sin(phase * 3)))
-            pico2d.draw_circle(x, y, radius, 180, 210, 255, alpha,
-                               filled=True)
+            alpha = 30 + int(22 * abs(math.sin(phase * 3)))
+            a.blit(image, x, y, radius * 2, radius * 2, alpha)
 
 
 def draw_heart_shape(cx, cy, size, color, filled=True):
@@ -708,6 +978,37 @@ def draw_heart_shape(cx, cy, size, color, filled=True):
                          color[0], color[1], color[2], 255)
 
 
+def coin_image():
+    """코인 그림(빛무리 + 몸통 + 하이라이트)을 한 장으로 굽는다."""
+    def paint():
+        cx = cy = 24
+        pico2d.draw_circle(cx, cy, 18, 255, 200, 80, 26, filled=True)
+        pico2d.draw_circle(cx, cy, 11, 255, 206, 74, 255, filled=True)
+        pico2d.draw_circle(cx, cy + 1, 6, 255, 242, 170, 255, filled=True)
+        pico2d.draw_line(cx - 5, cy + 5, cx + 2, cy + 12,
+                         255, 255, 230, 200)
+
+    return art().bake("coin", 48, 48, paint)
+
+
+def heart_pickup_image():
+    """하트 픽업 그림(빛무리 + 하트 + 하이라이트)을 한 장으로 굽는다."""
+    def paint():
+        pico2d.draw_circle(38, 38, 24, 255, 90, 130, 30, filled=True)
+        draw_heart_shape(38, 38, 30, (255, 92, 128))
+        draw_heart_shape(32, 43, 10, (255, 210, 220))
+
+    return art().bake("heart_pickup", 76, 76, paint)
+
+
+def hud_heart_image(filled):
+    def paint():
+        color = (255, 92, 128) if filled else (66, 70, 100)
+        draw_heart_shape(32, 32, 26, color, filled=filled)
+
+    return art().bake(("hud_heart", filled), 64, 64, paint)
+
+
 class Game:
     def __init__(self):
         self.text = TextRenderer()
@@ -733,6 +1034,8 @@ class Game:
         self.slashes = []
         self.last_attack_id = 0
         self.dust_timer = 0.0
+        self.fps = 0.0
+        self.renderer_name = ""
 
         rng = random.Random(5)
         self.motes = [
@@ -1082,18 +1385,15 @@ class Game:
             slash.draw(cam, shake)
 
     def _draw_hud(self):
+        a = art()
         # 하트
         for i in range(Girl.MAX_HP):
-            filled = i < self.girl.hp
-            draw_heart_shape(38 + i * 38, HEIGHT - 52, 26,
-                             (255, 92, 128) if filled else (66, 70, 100))
+            a.blit(hud_heart_image(i < self.girl.hp), 38 + i * 38,
+                   HEIGHT - 52)
         self.text.draw(24, 30, HEIGHT - 96,
                        "SCORE %06d" % self.score, (230, 236, 250))
         # 코인
-        pico2d.draw_circle(WIDTH - 156, HEIGHT - 56, 12, 255, 206, 74,
-                           255, filled=True)
-        pico2d.draw_circle(WIDTH - 156, HEIGHT - 55, 5, 255, 245, 190,
-                           255, filled=True)
+        a.blit(coin_image(), WIDTH - 156, HEIGHT - 56, 28, 28)
         self.text.draw(24, WIDTH - 134, HEIGHT - 56,
                        "x %02d" % self.coin_count, (240, 220, 150))
         minutes = int(self.play_time) // 60
@@ -1109,29 +1409,50 @@ class Game:
         px = bar_left + (bar_right - bar_left) * progress
         pico2d.draw_rectangle(bar_left, bar_y - 1, px, bar_y + 1,
                               60, 220, 190, filled=True)
-        pico2d.draw_circle(px, bar_y, 5, 150, 255, 235, 255, filled=True)
+        a.blit(a.disc((150, 255, 235)), px, bar_y, 10, 10)
 
         self.text.draw(16, 30, 26,
                        "A / D 이동   SPACE 점프   J 공격   P 일시정지",
                        (120, 136, 172), shadow=None)
+        self._draw_fps(WIDTH - 24, HEIGHT - 26, align="right")
+
+    def _draw_fps(self, x, y, align="left"):
+        if self.fps <= 0.0:
+            return
+        color = (140, 230, 190) if self.fps >= 50.0 else (255, 190, 120)
+        self.text.draw(16, x, y, "FPS %d" % round(self.fps), color,
+                       align=align, shadow=None)
+
+    def _spotlight_image(self):
+        def paint():
+            pico2d.draw_circle(240, 240, 240, 255, 210, 160, 14, filled=True)
+            pico2d.draw_circle(240, 240, 180, 255, 210, 160, 20, filled=True)
+            pico2d.draw_circle(240, 240, 120, 255, 210, 160, 26, filled=True)
+
+        return art().bake("spotlight", 480, 480, paint)
+
+    def _title_glow_image(self):
+        def paint():
+            pico2d.draw_circle(300, 300, 300, 120, 80, 200, 20, filled=True)
+            pico2d.draw_circle(300, 300, 220, 120, 80, 200, 18, filled=True)
+
+        return art().bake("title_glow", 600, 600, paint)
 
     def _draw_title(self):
+        a = art()
         # 무대
         pico2d.draw_rectangle(0, 0, WIDTH, GROUND, 15, 18, 38, filled=True)
         pico2d.draw_rectangle(0, GROUND - 7, WIDTH, GROUND,
                               62, 226, 196, filled=True)
 
         # 스포트라이트
-        for radius, alpha in ((240, 14), (180, 20), (120, 26)):
-            pico2d.draw_circle(986, GROUND + 200, radius,
-                               255, 210, 160, alpha, filled=True)
+        a.blit(self._spotlight_image(), 986, GROUND + 200)
 
         frame = int(self.time / 0.13) % 10
         self.girl.draw_preview(986, GROUND + 8, 0.62, frame)
 
         title_x = 430
-        pico2d.draw_circle(title_x, 500, 300, 120, 80, 200, 20, filled=True)
-        pico2d.draw_circle(title_x, 500, 220, 120, 80, 200, 18, filled=True)
+        a.blit(self._title_glow_image(), title_x, 500)
         self.text.draw(72, title_x, 520, "그림자 소녀",
                        (246, 242, 255), "center", shadow=(52, 20, 80))
         self.text.draw(22, title_x, 462, "S H A D O W   G I R L",
@@ -1158,6 +1479,11 @@ class Game:
             self.text.draw(18, WIDTH - 60, 40,
                            "BEST %06d" % self.best_score,
                            (220, 210, 160), align="right")
+        self._draw_fps(WIDTH - 24, 26, align="right")
+        if self.renderer_name:
+            self.text.draw(14, WIDTH - 24, 8,
+                           "renderer: %s" % self.renderer_name,
+                           (110, 120, 150), align="right", shadow=None)
 
     def _draw_pause(self):
         pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 170,
@@ -1196,8 +1522,32 @@ class Game:
 
 
 # ---------------------------------------------------------------------------
+def force_software_renderer():
+    """SDL 의 소프트웨어 렌더러를 강제한다. (--software, 성능 확인용)"""
+    original = pico2d.pico2d.SDL_CreateRenderer
+
+    def create(window, index, flags):
+        if flags & pico2d.SDL_RENDERER_ACCELERATED:
+            flags = pico2d.SDL_RENDERER_SOFTWARE
+        return original(window, index, flags)
+
+    pico2d.pico2d.SDL_CreateRenderer = create
+
+
+def renderer_name():
+    try:
+        info = pico2d.SDL_RendererInfo()
+        pico2d.SDL_GetRendererInfo(pico2d.pico2d.renderer, info)
+        return info.name.decode("utf-8", "replace")
+    except Exception:
+        return "unknown"
+
+
 def main():
     smoke = "--smoke" in sys.argv
+    uncapped = "--uncapped" in sys.argv
+    if "--software" in sys.argv:
+        force_software_renderer()
 
     pico2d.open_canvas(WIDTH, HEIGHT)
     pico2d.hide_cursor()
@@ -1205,13 +1555,22 @@ def main():
     enable_alpha_blending()
     patch_draw_primitives()
 
+    name = renderer_name()
+    print("[renderer] %s%s" % (name, " (software forced)"
+                               if "--software" in sys.argv else ""))
+
     game = Game()
     game.smoke = smoke
+    game.renderer_name = name
 
     last = pico2d.get_time()
     running = True
+    fps_frames = 0
+    fps_clock = time.perf_counter()
+    frame_target = 1.0 / (FPS + 2.0)
 
     while running:
+        frame_start = time.perf_counter()
         now = pico2d.get_time()
         dt = min(max(now - last, 0.0), 0.05)
         last = now
@@ -1244,11 +1603,25 @@ def main():
         game.draw()
         pico2d.update_canvas()
 
+        fps_frames += 1
+        fps_elapsed = time.perf_counter() - fps_clock
+        if fps_elapsed >= 0.5:
+            game.fps = fps_frames / fps_elapsed
+            fps_frames = 0
+            fps_clock = time.perf_counter()
+
         if smoke and game.time > 7.0:
             print("[smoke] finished state=%s girl=%s score=%d coins=%d x=%.1f"
                   % (game.state, game.girl.state, game.score,
                      game.coin_count, game.girl.x))
+            print("[smoke] fps=%.1f renderer=%s" % (game.fps, name))
             running = False
+
+        # 60fps 목표로 프레임 제한 (CPU/발열 감소)
+        if not uncapped:
+            remain = frame_target - (time.perf_counter() - frame_start)
+            if remain > 0.001:
+                time.sleep(remain)
 
     pico2d.close_canvas()
 
