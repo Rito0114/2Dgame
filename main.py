@@ -26,6 +26,8 @@ import pico2d
 import sdl2
 
 from background import Background
+from bear import (ATTACK_HOLD, BEAR_HEIGHT, BEAR_WIDTH, DEATH_TIME,
+                  draw_bear)
 from fence import Fence
 from girl import Girl
 from bench import Bench
@@ -43,10 +45,10 @@ WORLD_W = 7000
 FPS = 60
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BG_FILE = os.path.join(BASE_DIR, "background.png")
-BG_OVERLAY_FILE = os.path.join(BASE_DIR, "background_black.png")
-ROAD_FILE = os.path.join(BASE_DIR, "road.png")
-FENCE_FILE = os.path.join(BASE_DIR, "fence2.png")
+BG_FILE = os.path.join(BASE_DIR, "sprites", "object", "background.png")
+BG_OVERLAY_FILE = os.path.join(BASE_DIR, "sprites", "object", "background_black.png")
+ROAD_FILE = os.path.join(BASE_DIR, "sprites", "object", "road.png")
+FENCE_FILE = os.path.join(BASE_DIR, "sprites", "object", "fence2.png")
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
 BENCH_COUNT = 10
 BOX_COUNT = 6
@@ -442,8 +444,8 @@ class Checkpoint:
 
 
 class Enemy:
-    WIDTH = {"slime": 58, "wisp": 48}
-    HEIGHT = {"slime": 46, "wisp": 46}
+    WIDTH = {"bear": BEAR_WIDTH, "wisp": 48}
+    HEIGHT = {"bear": BEAR_HEIGHT, "wisp": 46}
 
     def __init__(self, kind, x, y, left, right, phase=0.0):
         self.kind = kind
@@ -459,6 +461,9 @@ class Enemy:
         self.vx = -78.0
         self.alive = True
         self.last_attack = -1
+        self.anim_time = 0.0
+        self.attack_hold = 0.0
+        self.death_time = 0.0
 
     @property
     def top(self):
@@ -472,10 +477,17 @@ class Enemy:
             self.height,
         )
 
+    def touch(self):
+        """girl 과 닿아 있는 동안 공격 모션을 보여 준다."""
+        self.attack_hold = ATTACK_HOLD
+
     def update(self, dt, time):
+        self.anim_time += dt
         if not self.alive:
+            self.death_time += dt
             return
-        if self.kind == "slime":
+        self.attack_hold = max(0.0, self.attack_hold - dt)
+        if self.kind == "bear":
             self.x += self.vx * dt
             half = self.width * 0.5
             if self.x < self.left + half:
@@ -489,46 +501,22 @@ class Enemy:
             self.y = self.ay + math.sin(time * 2.4 + self.phase) * 16.0
 
     def draw(self, camera_x, time, shake_x=0.0):
-        if not self.alive:
+        if not self.alive and self.death_time > DEATH_TIME:
             return
         x = self.x - camera_x + shake_x
         if x < -80 or x > WIDTH + 80:
             return
-        if self.kind == "slime":
-            self._draw_slime(x)
+        if self.kind == "bear":
+            facing = 1 if self.vx >= 0 else -1
+            if not self.alive:
+                state, t = "retire", self.death_time
+            elif self.attack_hold > 0.0:
+                state, t = "attack", self.anim_time
+            else:
+                state, t = "walk", self.anim_time
+            draw_bear(self.x, self.y, facing, state, t, camera_x, shake_x)
         else:
             self._draw_wisp(x)
-
-    def _draw_slime(self, x):
-        art().blit(self._slime_image(), x, self.y)
-
-    def _slime_image(self):
-        facing = 1 if self.vx >= 0 else -1
-        key = ("slime", facing)
-
-        def paint():
-            cx, base = 48, 48
-            # 그림자
-            pico2d.draw_circle(cx, base + 5, 25, 8, 8, 20, 90, filled=True)
-            # 몸통(원 3개를 겹쳐서 슬라임 모양)
-            pico2d.draw_circle(cx - 13, base + 17, 20, 28, 18, 48, 255,
-                               filled=True)
-            pico2d.draw_circle(cx + 13, base + 17, 20, 28, 18, 48, 255,
-                               filled=True)
-            pico2d.draw_circle(cx, base + 24, 22, 38, 24, 66, 255,
-                               filled=True)
-            # 하이라이트
-            pico2d.draw_circle(cx - 8, base + 34, 7, 92, 62, 140, 220,
-                               filled=True)
-            # 눈
-            eye = 4 * facing
-            for ex in (-8, 8):
-                pico2d.draw_circle(cx + ex + eye, base + 26, 5,
-                                   170, 255, 230, 255, filled=True)
-                pico2d.draw_circle(cx + ex + eye, base + 26, 2,
-                                   20, 20, 30, 255, filled=True)
-
-        return art().bake(key, 96, 96, paint)
 
     def _draw_wisp(self, x):
         art().blit(self._wisp_image(), x, self.y + self.height * 0.5)
@@ -692,16 +680,16 @@ class World:
             self._add_coin(x, y)
             x += step
 
-    def _add_slime(self, x, ground_y, left, right):
+    def _add_bear(self, x, ground_y, left, right):
         self.enemies.append(
-            Enemy("slime", x, ground_y, left, right, random.random() * math.tau)
+            Enemy("bear", x, ground_y, left, right, random.random() * math.tau)
         )
 
-    def _add_slime_on_surface(self):
+    def _add_bear_on_surface(self):
         candidates = [p for p in self.platforms if p.one_way and p.width >= 150]
         plat = random.choice(candidates)
         self.enemies.append(
-            Enemy("slime", plat.left + plat.width * 0.5, plat.top,
+            Enemy("bear", plat.left + plat.width * 0.5, plat.top,
                   plat.left, plat.right, random.random() * math.tau)
         )
 
@@ -738,23 +726,23 @@ class World:
         self._place_pickups()
 
         # 슬라임
-        self._add_slime(780, STAND_Y, 700, 1500)
-        self._add_slime(1250, STAND_Y, 1150, 1490)
-        self._add_slime(1750, STAND_Y, 1640, 1900)
-        self._add_slime(2450, STAND_Y, 2300, 2650)
-        self._add_slime(2810, STAND_Y, 2700, 2890)
-        self._add_slime(3250, STAND_Y, 3040, 3400)
-        self._add_slime(3600, STAND_Y, 3450, 3700)
-        self._add_slime(3960, STAND_Y, 3800, 4180)
-        self._add_slime(4550, STAND_Y, 4360, 4700)
-        self._add_slime(5050, STAND_Y, 4900, 5200)
-        self._add_slime(5450, STAND_Y, 5300, 5490)
-        self._add_slime(5900, STAND_Y, 5660, 6000)
-        self._add_slime(6300, STAND_Y, 6120, 6500)
-        self._add_slime(6600, STAND_Y, 6500, 6880)
+        self._add_bear(780, STAND_Y, 700, 1500)
+        self._add_bear(1250, STAND_Y, 1150, 1490)
+        self._add_bear(1750, STAND_Y, 1640, 1900)
+        self._add_bear(2450, STAND_Y, 2300, 2650)
+        self._add_bear(2810, STAND_Y, 2700, 2890)
+        self._add_bear(3250, STAND_Y, 3040, 3400)
+        self._add_bear(3600, STAND_Y, 3450, 3700)
+        self._add_bear(3960, STAND_Y, 3800, 4180)
+        self._add_bear(4550, STAND_Y, 4360, 4700)
+        self._add_bear(5050, STAND_Y, 4900, 5200)
+        self._add_bear(5450, STAND_Y, 5300, 5490)
+        self._add_bear(5900, STAND_Y, 5660, 6000)
+        self._add_bear(6300, STAND_Y, 6120, 6500)
+        self._add_bear(6600, STAND_Y, 6500, 6880)
         # 벤치/상자 위 슬라임
         for _ in range(4):
-            self._add_slime_on_surface()
+            self._add_bear_on_surface()
 
         # 위습(날아다니는 적)
         self._add_wisp(1350, 300)
@@ -1222,6 +1210,7 @@ class Game:
                 self.burst(enemy.x, enemy.y + enemy.height * 0.5, color,
                            16, 300, 0.55, 4)
             else:
+                enemy.touch()
                 if self.girl.take_hit(enemy.x):
                     self.shake = max(self.shake, 11.0)
                     self.burst(self.girl.x, self.girl.y + 100,

@@ -16,12 +16,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- 스프라이트 시트 정보 -------------------------------------------------
 SHEET_FILES = {
-    "idle": "idle_sprite.png",
-    "jump": "jump_sprite.png",
-    "attack": "attack_sprite.png",
-    "hit": "hit_sprite.png",
-    "retire": "retire_sprite.png",
-    "run": "run_sprite4.png",
+    "idle": os.path.join("sprites", "girl", "idle_sprite.png"),
+    "jump": os.path.join("sprites", "girl", "jump_sprite.png"),
+    "attack": os.path.join("sprites", "girl", "attack_sprite.png"),
+    "hit": os.path.join("sprites", "girl", "hit_sprite.png"),
+    "retire": os.path.join("sprites", "girl", "retire_sprite.png"),
+    "run": os.path.join("sprites", "girl", "run_sprite4.png"),
 }
 # 시트별 (열 수, 행 수). 대부분 5x2 이고, 달리기는 20프레임(5x4)이다.
 SHEET_GRID = {

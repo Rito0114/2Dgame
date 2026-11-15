@@ -9,7 +9,7 @@ import os
 from props import PROP_SCALE, Prop
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BENCH_FILE = os.path.join(BASE_DIR, "bench.png")
+BENCH_FILE = os.path.join(BASE_DIR, "sprites", "object", "bench.png")
 BENCH_BOTTOM_ROW = 788  # 벤치 다리 아랫면(원본 이미지 윗줄 기준)
 BENCH_OFFSET = -10  # 바닥보다 10px 더 아래
 SEAT_ROW = 565  # 앉는 면 윗줄(원본 이미지 윗줄 기준)

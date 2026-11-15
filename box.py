@@ -10,7 +10,7 @@ import os
 from props import PROP_SCALE, Prop
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BOX_FILE = os.path.join(BASE_DIR, "box2.png")
+BOX_FILE = os.path.join(BASE_DIR, "sprites", "object", "box2.png")
 BOX_BOTTOM_ROW = 836  # 상자 밑면(원본 이미지 윗줄 기준)
 BOX_SCALE = PROP_SCALE * 1.5 * 1.2
 # (윗면 행, 가로 범위) — 원본 이미지 기준. 1층은 오른쪽 상자의 윗면만 있다.
