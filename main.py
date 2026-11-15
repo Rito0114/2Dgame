@@ -548,8 +548,8 @@ class World:
 
     def _place_furniture(self, bench_count, box_count):
         """벤치와 상자를 땅 구간 위에 겹치지 않게 랜덤으로 놓는다."""
-        box_half = Box(STAND_Y).size() * 0.5
-        bench_half = Bench().size() * 0.5
+        box_half = Box(STAND_Y, self.spec.box_file).size() * 0.5
+        bench_half = Bench(self.spec.bench_file).size() * 0.5
         placed = []  # (중심 x, 반폭)
 
         def free(cx, half):
@@ -577,11 +577,11 @@ class World:
         for _ in range(box_count):
             cx = pick(box_half)
             if cx is not None:
-                self.furniture.append(("high", Box(STAND_Y), cx))
+                self.furniture.append(("high", Box(STAND_Y, self.spec.box_file), cx))
         for _ in range(bench_count):
             cx = pick(bench_half)
             if cx is not None:
-                self.furniture.append(("low", Bench(), cx))
+                self.furniture.append(("low", Bench(self.spec.bench_file), cx))
 
     def _place_pickups(self):
         """코인과 회복 아이템을 겹치지 않게 놓는다.

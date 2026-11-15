@@ -31,6 +31,8 @@ class StageSpec:
     background_overlay: str = "background_black.png"
     road: str = "road.png"
     fence: str = "fence2.png"
+    bench_file: str = "bench.png"  # sprites/object 안의 벤치 그림
+    box_file: str = "box2.png"  # sprites/object 안의 상자 그림
 
 
 def repeat(spec, times, name):

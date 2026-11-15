@@ -13,4 +13,6 @@ SPEC = replace(
     background="background_stage2.png",
     road="road_stage2.png",
     fence="fence_stage2.png",
+    bench_file="bench_stage2.png",
+    box_file="box_stage2.png",
 )
