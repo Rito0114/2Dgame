@@ -32,6 +32,7 @@ from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
                   BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME, FALL_TIME, draw_bird)
 from fence import Fence
 from girl import Girl
+from lamp import Lamp
 from bench import Bench
 from box import Box
 from road import Road
@@ -556,6 +557,7 @@ class World:
         self.goal_y = GROUND
         self.background = Background(BG_FILE, BG_OVERLAY_FILE)
         self.road = Road(ROAD_FILE)
+        self.lamp = Lamp()
         self.fence = Fence(FENCE_FILE)
         self.ground_spans = []
         self.furniture = []  # (종류, 그림 객체, 그림 중심 x)
@@ -803,36 +805,13 @@ class World:
     # ------------------------------------------------------------------
     # 체크포인트 / 골 / 아이템
     # ------------------------------------------------------------------
-    def _checkpoint_image(self, active):
-        def paint():
-            cx = 40
-            color = (90, 240, 210) if active else (90, 100, 140)
-            # 기둥
-            pico2d.draw_rectangle(cx - 4, 0, cx + 4, 104, 24, 30, 54,
-                                  filled=True)
-            pico2d.draw_rectangle(cx - 8, 0, cx + 8, 10, 34, 42, 70,
-                                  filled=True)
-            # 램프
-            pico2d.draw_circle(cx, 118, 30, color[0], color[1], color[2],
-                               30 if active else 12, filled=True)
-            pico2d.draw_circle(cx, 118, 10, color[0], color[1], color[2],
-                               255, filled=True)
-            pico2d.draw_rectangle(cx - 10, 104, cx + 10, 110,
-                                  18, 22, 42, filled=True)
-
-        return art().bake(("checkpoint", active), 80, 160, paint)
-
     def draw_checkpoints(self, camera_x, time, shake_x=0.0):
         a = art()
         for cp in self.checkpoints:
             x = cp.x - camera_x + shake_x
-            if x < -60 or x > WIDTH + 60:
+            if x < -120 or x > WIDTH + 120:
                 continue
-            a.blit(self._checkpoint_image(cp.active), x, cp.y + 80)
-            if cp.active:
-                flicker = 2 + int(2 * abs(math.sin(time * 7 + cp.x)))
-                a.blit(art().disc((240, 255, 250)), x, cp.y + 118,
-                       (5 + flicker) * 2, (5 + flicker) * 2)
+            self.lamp.draw(a, x, cp.y, cp.active)
 
     def _goal_images(self):
         def paint_glow():
