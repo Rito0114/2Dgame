@@ -35,6 +35,7 @@ from dash import SkillBackground
 from girl import Girl
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
+from ui import HUDOverlay
 from punch import DURATION as PUNCH_DURATION
 from punch import draw_punch
 from bench import Bench
@@ -892,6 +893,7 @@ class Game:
         self.girl.limit_left = 24
         self.girl.limit_right = WORLD_W - 24
         self.skill_bg = SkillBackground()
+        self.hud = HUDOverlay()
 
         self.state = "title"
         self.time = 0.0
@@ -1277,6 +1279,8 @@ class Game:
 
     def _draw_hud(self):
         a = art()
+        cooldown = self.girl.dash_cooldown / Girl.DASH_COOLDOWN
+        self.hud.draw(a, WIDTH, HEIGHT, self.girl.hp, cooldown)
         # 점수
         self.text.draw(24, 30, HEIGHT - 52,
                        "SCORE %06d" % self.score, (230, 236, 250))
