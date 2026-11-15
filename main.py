@@ -37,7 +37,7 @@ from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
-from audio import Bgm
+from audio import Bgm, Sfx
 from ui import HUDOverlay, kill_icon
 from punch import DURATION as PUNCH_DURATION
 from punch import PunchImpact, draw_punch
@@ -869,6 +869,7 @@ class Game:
         self.skill_bg = SkillBackground()
         self.hud = HUDOverlay()
         self.bgm = Bgm()
+        self.sfx = Sfx()
 
         self.state = "title"
         self.time = 0.0
@@ -1032,6 +1033,7 @@ class Game:
             self.slashes.append(
                 Slash(self.girl, self.girl.facing)
             )
+            self.sfx.play("punch_sound.mp3")
             self.burst(
                 self.girl.x + self.girl.facing * 60,
                 self.girl.y + 95,
@@ -1142,6 +1144,7 @@ class Game:
             else:
                 enemy.touch()
                 if self.girl.take_hit(enemy.x):
+                    self.sfx.play("female_deathsound.mp3")
                     self.shake = max(self.shake, 11.0)
                     self.burst(self.girl.x, self.girl.y + 100,
                                (255, 120, 140), 16, 320, 0.6, 4)
@@ -1155,6 +1158,8 @@ class Game:
             return
         if self.girl.y >= -80:
             return
+        self.sfx.play("falling_sound.mp3")
+        self.sfx.play("female_deathsound.mp3")
         if self.girl.hp <= 1:
             self.girl.x, self.girl.y = self.checkpoint
             self.girl.die()
