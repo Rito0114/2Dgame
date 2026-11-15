@@ -748,7 +748,7 @@ class World:
             x = left - camera_x + shake_x
             if x + width < -40 or x > WIDTH + 40:
                 continue
-            self.fence.draw(a, left, width, x, GROUND)
+            self.fence.draw(a, width, x, GROUND)
 
     def draw_platforms(self, camera_x, shake_x=0.0):
         a = art()

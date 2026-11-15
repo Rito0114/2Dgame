@@ -8,6 +8,8 @@ import pico2d
 
 # 이미지 아래쪽에서 포장 윗면까지의 높이(px)
 ROAD_TOP = 152
+# 땅 블록 가장자리의 그림자 폭(px)
+EDGE_SHADE = 10
 
 
 class Road:
@@ -51,6 +53,13 @@ class Road:
                     pico2d.SDL_Rect(int(x), int(road_y), road.w, road.h),
                 )
                 x += road.w
+            # 구멍과 맞닿는 가장자리를 어둡게 해서 절벽처럼 보이게 한다.
+            for i in range(EDGE_SHADE):
+                alpha = int(200 * (1.0 - i / EDGE_SHADE))
+                pico2d.draw_rectangle(i, 0, i + 1, height, 8, 10, 24,
+                                      alpha, filled=True)
+                pico2d.draw_rectangle(width - i - 1, 0, width - i, height,
+                                      8, 10, 24, alpha, filled=True)
 
         key = ("ground", width, height, int(left) % road.w, base_color)
         return art.bake(key, width, height, paint)
