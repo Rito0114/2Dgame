@@ -18,6 +18,7 @@ UI_DIR = os.path.join(BASE_DIR, "sprites", "UI")
 BACKGROUND_FILE = os.path.join(UI_DIR, "UI_background.png")
 HP_FILE = os.path.join(UI_DIR, "hp_{}.png")
 SKILL_TIME_FILE = os.path.join(UI_DIR, "skill_time.png")
+KILL_ICON_FILE = os.path.join(UI_DIR, "killcounter.png")
 MAX_HP = 5
 UI_SCALE = 0.75  # UI 그림의 화면 배율(원래 크기 대비)
 
@@ -34,6 +35,10 @@ def _image(path):
     if path not in _images:
         _images[path] = pico2d.load_image(path)
     return _images[path]
+
+
+def kill_icon():
+    return _image(KILL_ICON_FILE)
 
 
 class HUDOverlay:

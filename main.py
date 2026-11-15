@@ -37,7 +37,7 @@ from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
-from ui import HUDOverlay
+from ui import HUDOverlay, kill_icon
 from punch import DURATION as PUNCH_DURATION
 from punch import PunchImpact, draw_punch
 from bench import Bench
@@ -877,6 +877,7 @@ class Game:
 
         self.score = 0
         self.coin_count = 0
+        self.kill_count = 0
         self.checkpoint = (160, STAND_Y)
         self.best_score = 0
         self.clear_bonus = 0
@@ -918,6 +919,7 @@ class Game:
         self.shake = 0.0
         self.score = 0
         self.coin_count = 0
+        self.kill_count = 0
         self.checkpoint = (160, STAND_Y)
         self.clear_bonus = 0
         self.particles = []
@@ -1037,6 +1039,7 @@ class Game:
                 continue
             if overlaps(*hitbox, *enemy.rect()):
                 enemy.kill()
+                self.kill_count += 1
                 enemy.last_attack = self.girl.attack_id
                 self.score += 100
                 self.shake = max(self.shake, 5.0)
@@ -1107,6 +1110,7 @@ class Game:
             if self.girl.dash_timer > 0.0:
                 # 대쉬 중에 닿은 적은 바로 사망한다.
                 enemy.kill()
+                self.kill_count += 1
                 self.impacts.append(PunchImpact(
                     (self.girl.focus_x() + enemy.x) * 0.5,
                     enemy.y + enemy.height * 0.5, self.girl.facing))
@@ -1123,6 +1127,7 @@ class Game:
             )
             if stomp:
                 enemy.kill()
+                self.kill_count += 1
                 self.girl.bounce(700.0)
                 self.score += 150
                 self.shake = max(self.shake, 6.0)
@@ -1280,6 +1285,9 @@ class Game:
         a.blit(coin_image(), 44, HEIGHT - 94, 28, 28)
         self.text.draw(24, 66, HEIGHT - 94,
                        "x %02d" % self.coin_count, (240, 220, 150))
+        a.blit(kill_icon(), 44, HEIGHT - 130, 44, 36)
+        self.text.draw(24, 66, HEIGHT - 130,
+                       "x %02d" % self.kill_count, (240, 200, 200))
         minutes = int(self.play_time) // 60
         seconds = int(self.play_time) % 60
         self.text.draw(18, WIDTH * 0.5, HEIGHT - 52,
