@@ -56,6 +56,8 @@ FPS = 60
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
 FURNITURE_GAP = 40
+# 체크포인트가 활성화되는 세로 범위(체크포인트 기준 위쪽 px)
+CHECKPOINT_REACH_Y = 300
 # 코인/회복 아이템 배치
 PICKUP_LIFT = 50  # 윗면에서 코인/아이템까지의 높이
 PIT_ARC_BASE = GROUND + 40  # 포물선 시작/끝 높이
@@ -1069,7 +1071,7 @@ class Game:
         for cp in self.world.checkpoints:
             if cp.active:
                 continue
-            if abs(self.girl.x - cp.x) < 46 and self.girl.y <= cp.y + 150:
+            if abs(self.girl.x - cp.x) < 46 and self.girl.y <= cp.y + CHECKPOINT_REACH_Y:
                 cp.active = True
                 self.checkpoint = (cp.x, cp.y + 2)
                 self.girl.heal(1)

@@ -120,6 +120,7 @@ class Girl:
     DASH_SPEED = 900.0  # 대쉬 속도
     DASH_TIME = DASH_DURATION  # 대쉬 지속 시간(잔상 프레임 17개와 같다)
     DASH_END_BACK = 200.0  # 대쉬가 끝난 뒤 마지막 위치에서 왼쪽으로 옮기는 거리(px)
+    DASH_INVULN_TIME = 3.0  # 대쉬가 끝난 뒤 무적 시간(초). 반투명으로 표시한다.
     DASH_COOLDOWN = 40.0  # 대쉬 재사용 대기 시간(초)
     MAX_FALL = 1400.0
     COYOTE = 0.10
@@ -152,6 +153,7 @@ class Girl:
         self.attack_id = 0
         self.dash_timer = 0.0
         self.dash_cooldown = 0.0
+        self.dash_invuln = 0.0
 
         # 이벤트(먼지/사운드용)
         self.just_jumped = False
@@ -281,7 +283,8 @@ class Girl:
 
     def take_hit(self, source_x):
         # 대쉬 중에는 무적이다.
-        if self.state == "retire" or self.invuln > 0 or self.dash_timer > 0:
+        if (self.state == "retire" or self.invuln > 0 or self.dash_timer > 0
+                or self.dash_invuln > 0):
             return False
         self.hp -= 1
         self.invuln = 1.25
@@ -372,9 +375,11 @@ class Girl:
         self.hit_stun = max(0.0, self.hit_stun - dt)
         was_dashing = self.dash_timer > 0.0
         self.dash_timer = max(0.0, self.dash_timer - dt)
+        self.dash_invuln = max(0.0, self.dash_invuln - dt)
         if was_dashing and self.dash_timer <= 0.0:
             # 대쉬가 끝나면 마지막 프레임의 가장 오른쪽 픽셀 위치로 옮겨 놓는다.
             self.x += lead_offset(LAST_FRAME_ELAPSED, self.facing) - self.DASH_END_BACK * self.facing
+            self.dash_invuln = self.DASH_INVULN_TIME
         self.dash_cooldown = max(0.0, self.dash_cooldown - dt)
 
         attacking = self.attack_timer > 0.0
@@ -571,6 +576,10 @@ class Girl:
         frame = self._frame_index()
         left, bottom, width, height = _cell_rect(sheet_name, frame)
         sheet = _sheet(sheet_name)
+        # 대쉬 후 무적 중에는 반투명하게 그린다.
+        alpha = 110 if self.dash_invuln > 0.0 else 255
+        pico2d.SDL_SetTextureBlendMode(sheet.texture, pico2d.SDL_BLENDMODE_BLEND)
+        pico2d.SDL_SetTextureAlphaMod(sheet.texture, alpha)
         scale = SHEET_SCALE.get(sheet_name, SCALE)
         draw_w = width * scale
         draw_h = height * scale
@@ -593,6 +602,7 @@ class Girl:
             left, bottom, width, height, 0.0, flip,
             screen_x, center_y, draw_w, draw_h,
         )
+        pico2d.SDL_SetTextureAlphaMod(sheet.texture, 255)
 
         # 달리는 동안 발밑 먼지를 살짝 표현
         if self.state == "run" and int(time * 12) % 2 == 0:
