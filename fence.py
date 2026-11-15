@@ -9,7 +9,7 @@ import pico2d
 # 이미지 아래쪽에서 울타리 아랫단까지의 높이(px). road.png 와 같은 기준이다.
 FENCE_BASE = 152
 # 원본 이미지(4344x724)를 줄여서 쓰는 비율.
-FENCE_SCALE = 0.5
+FENCE_SCALE = 1.125
 
 
 class Fence:

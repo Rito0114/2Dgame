@@ -43,7 +43,7 @@ FPS = 60
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BG_FILE = os.path.join(BASE_DIR, "background.png")
 ROAD_FILE = os.path.join(BASE_DIR, "road.png")
-FENCE_FILE = os.path.join(BASE_DIR, "fence.png")
+FENCE_FILE = os.path.join(BASE_DIR, "fence2.png")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
