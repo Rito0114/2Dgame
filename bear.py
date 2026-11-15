@@ -16,7 +16,7 @@ import pico2d
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SPRITE_DIR = os.path.join(BASE_DIR, "sprites", "bear")
 WALK_FILE = os.path.join(SPRITE_DIR, "bear_walk.png")
-ATTACK_FILE = os.path.join(SPRITE_DIR, "bear_attack.png")
+ATTACK_FILE = os.path.join(SPRITE_DIR, "bear_attack2.png")
 RETIRE_FILE = os.path.join(SPRITE_DIR, "bear_retire2.png")
 COLS, ROWS = 5, 2
 CELL_INSET = 3  # 셀 가장자리에서 잘라낼 픽셀 수(원본 기준, 가로)
@@ -29,7 +29,7 @@ BEAR_HEIGHT = 150
 
 # 걷기/공격: 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px)
 WALK_PAD = (11, 13, 15, 11, 15, 17, 20, 22, 20, 18)
-ATTACK_PAD = (15, 15, 15, 15, 14, 23, 23, 23, 23, 23)
+ATTACK_PAD = (17, 17, 17, 17, 16, 29, 29, 29, 29, 29)
 
 # 사망: 줄마다 자르는 범위(원본 이미지 y, 위쪽 0 기준)
 RETIRE_ROW_TOP = (0, 428)
