@@ -21,15 +21,22 @@ SHEET_FILES = {
     "attack": "attack_sprite.png",
     "hit": "hit_sprite.png",
     "retire": "retire_sprite.png",
+    "run": "run_sprite.png",
 }
-SHEET_W, SHEET_H = 1536, 1024
-COLS, ROWS = 5, 2
-CELL_H = SHEET_H // ROWS  # 512
+# 시트별 (열 수, 행 수). 대부분 5x2 이고, 달리기는 20프레임(5x4)이다.
+SHEET_GRID = {
+    "idle": (5, 2),
+    "jump": (5, 2),
+    "attack": (5, 2),
+    "hit": (5, 2),
+    "retire": (5, 2),
+    "run": (5, 4),
+}
 
 # 화면에 그릴 때 크기(원본 307x512 셀을 0.38배로 축소)
 SCALE = 0.38
-DRAW_W = int(round(307 * SCALE))   # 117
-DRAW_H = int(round(CELL_H * SCALE))  # 195
+# 달리기 시트는 머리가 상대적으로 커서, 화면에서 머리 폭이 대기 자세와 같도록 줄인다.
+SHEET_SCALE = {"run": 0.545}
 
 # 시트마다 셀 아래쪽 여백(캐릭터 발이 셀 바닥에서 얼마나 떨어져 있는지)이 다르다.
 # 실측값(px, 원본 기준)을 시트별로 보정해서 시트를 바꿔도 발 높이가 크게 튀지 않게 한다.
@@ -43,7 +50,8 @@ FOOT_PAD = {
 # 사망 모션은 몸이 바닥으로 내려앉는 동작이라, 프레임마다 가장 낮은 픽셀이
 # 정확히 발밑 좌표에 오도록 맞춰야 땅에 뜨거나 파묻히지 않는다.
 RETIRE_PAD = (37, 37, 40, 32, 32, 63, 64, 63, 60, 56)
-RUN_LEAN = 0.10  # 달릴 때 몸을 앞으로 기울이는 정도(라디안)
+# 달리기 프레임마다 발바닥이 셀 아래쪽에서 떨어진 높이(원본 px). 발이 땅에 붙도록 보정한다.
+RUN_PAD = (10, 0, 0, 0, 7, 0, 0, 0, 0, 0, 16, 7, 10, 7, 1, 5, 3, 5, 3, 3)
 
 LEFT_KEYS = {sdl2.SDLK_a, sdl2.SDLK_LEFT}
 RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
@@ -60,14 +68,17 @@ def _sheet(name):
     return _sheet_cache[name]
 
 
-def _cell_rect(frame):
-    """프레임 번호(0~9)에 해당하는 (left, bottom, width, height)를 돌려준다."""
-    col = frame % COLS
-    row = frame // COLS
-    left = int(round(col * SHEET_W / COLS))
-    right = int(round((col + 1) * SHEET_W / COLS))
-    bottom = SHEET_H - (row + 1) * CELL_H
-    return left, bottom, right - left, CELL_H
+def _cell_rect(name, frame):
+    """시트 name 의 프레임 번호에 해당하는 (left, bottom, width, height)를 돌려준다."""
+    sheet = _sheet(name)
+    cols, rows = SHEET_GRID[name]
+    col = frame % cols
+    row = frame // cols
+    left = int(round(col * sheet.w / cols))
+    right = int(round((col + 1) * sheet.w / cols))
+    top = int(round(row * sheet.h / rows))
+    bottom_row = int(round((row + 1) * sheet.h / rows))
+    return left, sheet.h - bottom_row, right - left, bottom_row - top
 
 
 class Girl:
@@ -426,7 +437,7 @@ class Girl:
         if self.state == "idle":
             return int(t / 0.13) % 10
         if self.state == "run":
-            return int(t / 0.07) % 10
+            return int(t / 0.035) % 20
         if self.state == "jump":
             if self.vy > 0.0:
                 return min(int(t / 0.06), 4)
@@ -440,10 +451,8 @@ class Girl:
         return 0
 
     def _sheet_name(self):
-        if self.state == "run":
-            return "idle"
-        if self.state == "jump":
-            return "jump"
+        if self.state in ("run", "jump"):
+            return self.state
         if self.state in ("idle", "attack", "hit", "retire"):
             return self.state
         return "idle"
@@ -455,28 +464,27 @@ class Girl:
 
         sheet_name = self._sheet_name()
         bob = 0.0
-        lean = 0.0
         if self.state == "idle":
             bob = math.sin(time * 3.2) * 1.5
-        elif self.state == "run":
-            # 발이 땅에서 살짝 떨어지는 바운스 + 진행 방향으로의 기울기.
-            # (달리기 전용 시트가 없어서 대기 프레임을 쓰기 때문에 필요하다)
-            bob = abs(math.sin(time * 15.0)) * 2.5
-            lean = -RUN_LEAN * self.facing
 
         frame = self._frame_index()
-        left, bottom, width, height = _cell_rect(frame)
+        left, bottom, width, height = _cell_rect(sheet_name, frame)
         sheet = _sheet(sheet_name)
+        scale = SHEET_SCALE.get(sheet_name, SCALE)
+        draw_w = width * scale
+        draw_h = height * scale
         flip = "h" if self.facing < 0 else ""
         screen_x = self.x - camera_x + shake_x
         if sheet_name == "retire":
-            pad = RETIRE_PAD[min(frame, len(RETIRE_PAD) - 1)] * SCALE
+            pad = RETIRE_PAD[min(frame, len(RETIRE_PAD) - 1)]
+        elif sheet_name == "run":
+            pad = RUN_PAD[frame]
         else:
-            pad = FOOT_PAD[sheet_name] * SCALE
-        center_y = self.y + DRAW_H * 0.5 - pad + bob
+            pad = FOOT_PAD[sheet_name]
+        center_y = self.y + draw_h * 0.5 - pad * scale + bob
         sheet.clip_composite_draw(
-            left, bottom, width, height, lean, flip,
-            screen_x, center_y, DRAW_W, DRAW_H,
+            left, bottom, width, height, 0.0, flip,
+            screen_x, center_y, draw_w, draw_h,
         )
 
         # 달리는 동안 발밑 먼지를 살짝 표현
@@ -491,10 +499,10 @@ class Girl:
 
     def draw_preview(self, x, y, scale=0.7, frame=0, facing=1):
         """타이틀 화면용 큰 미리보기."""
-        left, bottom, width, height = _cell_rect(frame)
+        left, bottom, width, height = _cell_rect("idle", frame)
         sheet = _sheet("idle")
-        w = 307 * scale
-        h = CELL_H * scale
+        w = width * scale
+        h = height * scale
         center_y = y + h * 0.5 - FOOT_PAD["idle"] * scale
         flip = "h" if facing < 0 else ""
         sheet.clip_composite_draw(
