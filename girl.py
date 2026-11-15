@@ -56,6 +56,7 @@ RUN_PAD = (9, 13, 8, 8, 8, 11, 10, 9, 9, 8, 9, 13, 8, 8, 8, 12, 11, 10, 10, 9)
 LEFT_KEYS = {sdl2.SDLK_a, sdl2.SDLK_LEFT}
 RIGHT_KEYS = {sdl2.SDLK_d, sdl2.SDLK_RIGHT}
 JUMP_KEYS = {sdl2.SDLK_SPACE, sdl2.SDLK_w, sdl2.SDLK_UP}
+DROP_KEYS = {sdl2.SDLK_s, sdl2.SDLK_DOWN}
 ATTACK_KEYS = {sdl2.SDLK_j, sdl2.SDLK_x, sdl2.SDLK_k, sdl2.SDLK_LCTRL}
 
 _sheet_cache = {}
@@ -93,6 +94,7 @@ class Girl:
     FRICTION = 3200.0
     GRAVITY = 2300.0
     JUMP_V = 880.0
+    DROP_SPEED = 260.0  # 아래 점프를 시작할 때 주는 하강 속도
     MAX_FALL = 1400.0
     COYOTE = 0.10
     JUMP_BUFFER = 0.14
@@ -129,6 +131,10 @@ class Girl:
         self.land_speed = 0.0
 
         self.keys = set()
+        # 아래 점프: 단방향 발판을 아래로 통과해 떨어진다.
+        self.floor = None  # 지금 서 있는 발판
+        self.drop_request = False
+        self.drop_through = None  # 통과 중인 단방향 발판
         self.limit_left = -1e9
         self.limit_right = 1e9
 
@@ -142,9 +148,13 @@ class Girl:
                 self.keys.add("left")
             elif key in RIGHT_KEYS:
                 self.keys.add("right")
+            elif key in DROP_KEYS:
+                self.keys.add("down")
             elif key in JUMP_KEYS:
                 self.jump_held = True
                 self.jump_buffer = self.JUMP_BUFFER
+                if "down" in self.keys:
+                    self.drop_request = True
             elif key in ATTACK_KEYS:
                 self.request_attack()
         elif event.type == sdl2.SDL_KEYUP:
@@ -153,12 +163,15 @@ class Girl:
                 self.keys.discard("left")
             elif key in RIGHT_KEYS:
                 self.keys.discard("right")
+            elif key in DROP_KEYS:
+                self.keys.discard("down")
             elif key in JUMP_KEYS:
                 self.jump_held = False
 
     def clear_keys(self):
         self.keys.clear()
         self.jump_held = False
+        self.drop_request = False
 
     def request_attack(self):
         if self.state in ("retire", "hit") or self.hit_stun > 0:
@@ -332,6 +345,18 @@ class Girl:
             accel = self.ACCEL if direction else self.FRICTION
             self.vx = self._approach(self.vx, target, accel * dt)
 
+        # --- 아래 점프 -------------------------------------------------
+        if self.drop_request:
+            self.drop_request = False
+            if (self.on_ground and self.hit_stun <= 0.0
+                    and self.floor is not None and self.floor.one_way):
+                self.drop_through = self.floor
+                self.vy = -self.DROP_SPEED
+                self.on_ground = False
+                self.coyote = 0.0
+                self.jump_buffer = 0.0
+                self.floor = None
+
         # --- 점프 ------------------------------------------------------
         if self.on_ground:
             self.coyote = self.COYOTE
@@ -378,8 +403,11 @@ class Girl:
         self.y += self.vy * dt
         was_on_ground = self.on_ground
         self.on_ground = False
+        self.floor = None
 
         for platform in platforms:
+            if platform is self.drop_through:
+                continue
             if self.right <= platform.left or self.left >= platform.right:
                 continue
             if self.vy <= 0.0:
@@ -391,6 +419,7 @@ class Girl:
                     self.y = platform.top
                     self.vy = 0.0
                     self.on_ground = True
+                    self.floor = platform
                     if not was_on_ground and fall_speed < -240.0:
                         self.just_landed = True
                         self.land_speed = -fall_speed
@@ -399,6 +428,12 @@ class Girl:
                 self.y = platform.bottom - self.HITBOX_H
                 self.vy = 0.0
                 break
+
+        if self.drop_through is not None:
+            through = self.drop_through
+            if (self.y < through.bottom or self.right <= through.left
+                    or self.left >= through.right):
+                self.drop_through = None
 
         self.x = max(self.limit_left, min(self.limit_right, self.x))
 
