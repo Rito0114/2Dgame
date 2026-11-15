@@ -53,6 +53,14 @@ BOX_COUNT = 6
 FURNITURE_GAP = 40
 FURNITURE_MIN_X = 700
 FURNITURE_MAX_X = 6200
+# 코인/회복 아이템 배치
+COIN_TOTAL = 40  # 전체 코인 개수
+HEART_COUNT = 3  # 회복 아이템 개수
+HEART_MIN_SEGMENT = 2  # 회복 아이템은 이 번째 땅(0부터 셈, 3번째 땅)부터 나온다
+PICKUP_LIFT = 50  # 윗면에서 코인/아이템까지의 높이
+PIT_ARC_COUNT = 2  # 코인 포물선을 놓을 구멍 개수
+PIT_ARC_BASE = GROUND + 40  # 포물선 시작/끝 높이
+PIT_ARC_HEIGHT = 80  # 포물선 꼭대기까지 올라가는 높이
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(
@@ -610,6 +618,58 @@ class World:
             if cx is not None:
                 self.furniture.append(("low", Bench(), cx))
 
+    def _place_pickups(self):
+        """코인과 회복 아이템을 겹치지 않게 놓는다.
+
+        - 회복 아이템: 윗면 몇 곳에 하나씩. 그 윗면에는 코인을 놓지 않는다.
+        - 코인 줄: 일부 윗면에만 놓는다.
+        - 구멍 몇 곳: 점프 포물선을 따라 코인을 놓는다.
+        """
+        spans = sorted(self.ground_spans)
+        gaps = [(a[1], b[0]) for a, b in zip(spans, spans[1:])]
+        for left, right in random.sample(gaps, min(PIT_ARC_COUNT, len(gaps))):
+            self._place_pit_arc(left, right)
+
+        surfaces = [p for p in self.platforms if p.one_way]
+        heart_min_x = spans[HEART_MIN_SEGMENT][0]
+        heart_pool = [p for p in surfaces if p.left >= heart_min_x]
+        heart_surfaces = random.sample(heart_pool, min(HEART_COUNT, len(heart_pool)))
+        for plat in heart_surfaces:
+            self.hearts.append(
+                HeartPickup(plat.left + plat.width * 0.5, plat.top + PICKUP_LIFT,
+                            random.random() * math.tau)
+            )
+
+        # 남은 코인 수만큼 윗면에 줄로 채운다(전체 COIN_TOTAL 개).
+        budget = COIN_TOTAL - len(self.coins)
+        random.shuffle(surfaces)
+        for plat in surfaces:
+            if budget <= 0:
+                break
+            if plat in heart_surfaces:
+                continue
+            count = min(budget, max(3, int(plat.width // 60)))
+            spacing = (min(42.0, (plat.width - 40.0) / (count - 1))
+                       if count > 1 else 0.0)
+            center = plat.left + plat.width * 0.5
+            for i in range(count):
+                offset = (i - (count - 1) * 0.5) * spacing
+                self.coins.append(
+                    Coin(center + offset, plat.top + PICKUP_LIFT,
+                         random.random() * math.tau)
+                )
+            budget -= count
+
+    def _place_pit_arc(self, left, right):
+        """구멍 위로 뛰어넘는 포물선을 따라 코인을 놓는다."""
+        count = 7
+        x0, x1 = left - 20, right + 20
+        for i in range(count):
+            t = i / (count - 1)
+            x = x0 + (x1 - x0) * t
+            y = PIT_ARC_BASE + 4 * PIT_ARC_HEIGHT * t * (1 - t)
+            self.coins.append(Coin(x, y, random.random() * math.tau))
+
     def _add_surfaces(self):
         """가구의 밟을 수 있는 윗면을 발판으로 만든다."""
         for kind, prop, cx in self.furniture:
@@ -625,12 +685,6 @@ class World:
         self.coins.append(
             Coin(x, y - FLOAT_DROP, random.random() * math.tau)
         )
-
-    def _coin_arc(self, cx, base_y, count=5, spacing=42, lift=70):
-        for i in range(count):
-            offset = i - (count - 1) * 0.5
-            y = base_y + lift - abs(offset) * 14.0
-            self._add_coin(cx + offset * spacing, y)
 
     def _coin_line(self, x1, x2, y, step=50):
         x = x1
@@ -677,39 +731,11 @@ class World:
         self._place_furniture(BENCH_COUNT, BOX_COUNT)
         self._add_surfaces()
 
-        # 코인
+        # 시작 지점 코인 줄 (발판과 무관하게 점프로 바로 닿는 높이)
         self._coin_line(180, 400, 200)
-        self._coin_arc(300, 190, 5, 42, 80)
-        self._coin_arc(520, 330, 5, 40, 60)
-        self._coin_arc(790, 470, 5, 44, 60)
-        self._coin_arc(1000, 330, 3, 44, 50)
-        self._coin_arc(1160, 200, 3, 40, 40)
-        self._coin_arc(1570, 250, 5, 40, 70)
-        self._coin_arc(1760, 210, 4, 42, 50)
-        self._coin_arc(2140, 460, 5, 40, 60)
-        self._coin_arc(2380, 360, 3, 40, 50)
-        self._coin_arc(2600, 210, 4, 42, 45)
-        self._coin_arc(2970, 260, 5, 40, 70)
-        self._coin_arc(3300, 320, 4, 40, 50)
-        self._coin_arc(3500, 430, 3, 38, 45)
-        self._coin_arc(3780, 350, 4, 42, 50)
-        self._coin_arc(4060, 300, 4, 40, 50)
-        self._coin_arc(4270, 250, 5, 40, 70)
-        self._coin_line(4480, 4660, 200)
-        self._coin_arc(4600, 330, 4, 40, 50)
-        self._coin_arc(4920, 470, 3, 38, 40)
-        self._coin_arc(5200, 370, 4, 40, 50)
-        self._coin_arc(5570, 260, 5, 40, 70)
-        self._coin_arc(5850, 320, 4, 42, 50)
-        self._coin_arc(6200, 450, 3, 38, 45)
-        self._coin_arc(6500, 340, 4, 42, 50)
 
-        # 회복 아이템
-        self.hearts = [
-            HeartPickup(1200, GROUND + 40 - FLOAT_DROP, 0.0),
-            HeartPickup(3500, 410 - FLOAT_DROP, 1.7),
-            HeartPickup(6000, GROUND + 40 - FLOAT_DROP, 3.2),
-        ]
+        # 벤치/상자 윗면 위의 코인과 회복 아이템
+        self._place_pickups()
 
         # 슬라임
         self._add_slime(780, STAND_Y, 700, 1500)
