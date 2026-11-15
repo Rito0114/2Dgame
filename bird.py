@@ -15,7 +15,7 @@ import pico2d
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SPRITE_DIR = os.path.join(BASE_DIR, "sprites", "bird")
 FLY_FILE = os.path.join(SPRITE_DIR, "bird_fly.png")
-ATTACK_FILE = os.path.join(SPRITE_DIR, "bird_attack.png")
+ATTACK_FILE = os.path.join(SPRITE_DIR, "bird_attack2.png")
 RETIRE_FILE = os.path.join(SPRITE_DIR, "bird_retire2.png")
 COLS, ROWS = 5, 2
 CELL_H = 400  # 사망 시트의 셀 높이(원본 픽셀)
@@ -33,7 +33,9 @@ RETIRE_FRAME_TIME = 0.09
 # 사망 시 떨어지는 시간: 사망 모션 한 바퀴와 같다.
 FALL_TIME = RETIRE_FRAME_TIME * 10
 # 접촉 중 공격 모션을 유지하는 시간
-ATTACK_HOLD = 0.35
+# 공격 모션은 한 번만 재생한다(10프레임). 접촉이 끊긴 뒤 이 시간이 지나야 다시 공격한다.
+ATTACK_DURATION = ATTACK_FRAME_TIME * 10
+ATTACK_HOLD = 0.1
 # 사망 모션이 끝난 뒤 이 시간이 지나면 화면에서 사라진다.
 DEATH_TIME = FALL_TIME + 0.4
 
@@ -76,7 +78,7 @@ def draw_bird(x, y, facing, state, t, camera_x=0.0, shake_x=0.0):
         center_y = y + CELL_H * SCALE * 0.5 - RETIRE_PAD[frame] * SCALE
     else:
         if state == "attack":
-            path, frame = ATTACK_FILE, int(t / ATTACK_FRAME_TIME) % 10
+            path, frame = ATTACK_FILE, min(int(t / ATTACK_FRAME_TIME), 9)
         else:
             path, frame = FLY_FILE, int(t / FLY_FRAME_TIME) % 10
         sheet = _sheet(path)

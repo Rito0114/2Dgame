@@ -43,7 +43,9 @@ RETIRE_FRAME_TIME = 0.09
 # 사망 모션이 끝난 뒤 이 시간이 지나면 화면에서 사라진다.
 DEATH_TIME = RETIRE_FRAME_TIME * COLS * ROWS + 0.4
 # 접촉 중 공격 모션을 유지하는 시간
-ATTACK_HOLD = 0.35
+# 공격 모션은 한 번만 재생한다(10프레임). 접촉이 끊긴 뒤 이 시간이 지나야 다시 공격한다.
+ATTACK_DURATION = ATTACK_FRAME_TIME * 10
+ATTACK_HOLD = 0.1
 
 _sheets = {}
 
@@ -92,7 +94,7 @@ def draw_bear(x, y, facing, state, t, camera_x=0.0, shake_x=0.0):
         foot = RETIRE_PAD[frame]
     else:
         if state == "attack":
-            path, pads, frame = ATTACK_FILE, ATTACK_PAD, int(t / ATTACK_FRAME_TIME) % 10
+            path, pads, frame = ATTACK_FILE, ATTACK_PAD, min(int(t / ATTACK_FRAME_TIME), 9)
         else:
             path, pads, frame = WALK_FILE, WALK_PAD, int(t / WALK_FRAME_TIME) % 10
         sheet = _sheet(path)

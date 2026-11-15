@@ -26,9 +26,10 @@ import pico2d
 import sdl2
 
 from background import Background
+from bear import ATTACK_DURATION as BEAR_ATTACK_DURATION
 from bear import BEAR_HEIGHT, BEAR_WIDTH, draw_bear
-from bird import (ATTACK_HOLD, BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME,
-                  FALL_TIME, draw_bird)
+from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
+                  BIRD_HEIGHT, BIRD_WIDTH, DEATH_TIME, FALL_TIME, draw_bird)
 from fence import Fence
 from girl import Girl
 from bench import Bench
@@ -447,6 +448,7 @@ class Checkpoint:
 class Enemy:
     WIDTH = {"bear": BEAR_WIDTH, "bird": BIRD_WIDTH}
     HEIGHT = {"bear": BEAR_HEIGHT, "bird": BIRD_HEIGHT}
+    ATTACK_DURATION = {"bear": BEAR_ATTACK_DURATION, "bird": BIRD_ATTACK_DURATION}
 
     def __init__(self, kind, x, y, left, right, phase=0.0):
         self.kind = kind
@@ -463,7 +465,8 @@ class Enemy:
         self.alive = True
         self.last_attack = -1
         self.anim_time = 0.0
-        self.attack_hold = 0.0
+        self.attack_hold = 0.0  # 접촉 중이라는 표시(접촉이 끊기면 조금 뒤 0)
+        self.attack_t = None  # 공격 모션 경과 시간(접촉 시작 시 0부터)
         self.death_time = 0.0
         self.death_y = self.y
         self.facing = -1
@@ -481,7 +484,12 @@ class Enemy:
         )
 
     def touch(self):
-        """girl 과 닿아 있는 동안 공격 모션을 보여 준다."""
+        """girl 과 닿는 순간 공격 모션을 한 번 재생한다. 접촉이 이어지는 동안은 다시 재생하지 않는다."""
+        # 접촉이 막 시작됐고 이전 공격 모션이 끝난 경우에만 다시 재생한다.
+        if self.attack_hold <= 0.0 and (
+                self.attack_t is None
+                or self.attack_t >= self.ATTACK_DURATION[self.kind]):
+            self.attack_t = 0.0
         self.attack_hold = ATTACK_HOLD
 
     def kill(self):
@@ -499,6 +507,8 @@ class Enemy:
                 self.y = self.death_y + (STAND_Y - self.death_y) * progress * progress
             return
         self.attack_hold = max(0.0, self.attack_hold - dt)
+        if self.attack_t is not None:
+            self.attack_t += dt
         if self.kind == "bear":
             self.x += self.vx * dt
             half = self.width * 0.5
@@ -523,8 +533,8 @@ class Enemy:
             return
         if not self.alive:
             state, t = "retire", self.death_time
-        elif self.attack_hold > 0.0:
-            state, t = "attack", self.anim_time
+        elif self.attack_t is not None and self.attack_t < self.ATTACK_DURATION[self.kind]:
+            state, t = "attack", self.attack_t
         else:
             state, t = "walk", self.anim_time
         if self.kind == "bear":
