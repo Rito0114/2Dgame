@@ -33,6 +33,8 @@ from bird import (ATTACK_DURATION as BIRD_ATTACK_DURATION, ATTACK_HOLD,
 from fence import Fence
 from dash import SkillBackground
 from girl import Girl
+from stage1 import SPEC as STAGE1_SPEC
+from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from ui import HUDOverlay
@@ -49,7 +51,6 @@ GROUND = 140
 FLOAT_DROP = 60
 # 캐릭터와 땅 위의 적이 서는 높이. 도로 그림은 GROUND 에 그대로 둔다.
 STAND_Y = GROUND - FLOAT_DROP
-WORLD_W = 7000
 FPS = 60
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -58,17 +59,9 @@ BG_OVERLAY_FILE = os.path.join(BASE_DIR, "sprites", "object", "background_black.
 ROAD_FILE = os.path.join(BASE_DIR, "sprites", "object", "road.png")
 FENCE_FILE = os.path.join(BASE_DIR, "sprites", "object", "fence2.png")
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
-BENCH_COUNT = 10
-BOX_COUNT = 6
 FURNITURE_GAP = 40
-FURNITURE_MIN_X = 700
-FURNITURE_MAX_X = 6200
 # 코인/회복 아이템 배치
-COIN_TOTAL = 40  # 전체 코인 개수
-HEART_COUNT = 3  # 회복 아이템 개수
-HEART_MIN_SEGMENT = 2  # 회복 아이템은 이 번째 땅(0부터 셈, 3번째 땅)부터 나온다
 PICKUP_LIFT = 50  # 윗면에서 코인/아이템까지의 높이
-PIT_ARC_COUNT = 2  # 코인 포물선을 놓을 구멍 개수
 PIT_ARC_BASE = GROUND + 40  # 포물선 시작/끝 높이
 PIT_ARC_HEIGHT = 80  # 포물선 꼭대기까지 올라가는 높이
 
@@ -520,14 +513,19 @@ class Enemy:
                       camera_x, shake_x)
 
 
+STAGES = {1: STAGE1_SPEC, 2: STAGE2_SPEC}
+
+
 class World:
-    def __init__(self):
+    def __init__(self, spec):
+        self.spec = spec
+        self.world_w = spec.world_w
         self.platforms = []
         self.enemies = []
         self.coins = []
         self.hearts = []
         self.checkpoints = []
-        self.goal_x = 6720
+        self.goal_x = spec.goal_x
         self.goal_y = GROUND
         self.background = Background(BG_FILE, BG_OVERLAY_FILE)
         self.road = Road(ROAD_FILE)
@@ -568,8 +566,8 @@ class World:
         def pick(half):
             for _ in range(300):
                 left, right = random.choice(self.ground_spans)
-                lo = max(left + half, FURNITURE_MIN_X)
-                hi = min(right - half, FURNITURE_MAX_X)
+                lo = max(left + half, self.spec.furniture_min_x)
+                hi = min(right - half, self.spec.furniture_max_x)
                 if lo > hi:
                     continue
                 cx = random.uniform(lo, hi)
@@ -595,14 +593,16 @@ class World:
         - 구멍 몇 곳: 점프 포물선을 따라 코인을 놓는다.
         """
         spans = sorted(self.ground_spans)
-        gaps = [(a[1], b[0]) for a, b in zip(spans, spans[1:])]
-        for left, right in random.sample(gaps, min(PIT_ARC_COUNT, len(gaps))):
+        # 땅이 맞닿은 곳(폭 0)은 구멍이 아니므로 제외한다.
+        gaps = [(a[1], b[0]) for a, b in zip(spans, spans[1:]) if b[0] - a[1] > 50]
+        pit_count = self.spec.pit_arc_count
+        for left, right in random.sample(gaps, min(pit_count, len(gaps))):
             self._place_pit_arc(left, right)
 
         surfaces = [p for p in self.platforms if p.one_way]
-        heart_min_x = spans[HEART_MIN_SEGMENT][0]
+        heart_min_x = spans[self.spec.heart_min_segment][0]
         heart_pool = [p for p in surfaces if p.left >= heart_min_x]
-        heart_surfaces = random.sample(heart_pool, min(HEART_COUNT, len(heart_pool)))
+        heart_surfaces = random.sample(heart_pool, min(self.spec.heart_count, len(heart_pool)))
         for plat in heart_surfaces:
             self.hearts.append(
                 HeartPickup(plat.left + plat.width * 0.5, plat.top + PICKUP_LIFT,
@@ -610,7 +610,7 @@ class World:
             )
 
         # 남은 코인 수만큼 윗면에 줄로 채운다(전체 COIN_TOTAL 개).
-        budget = COIN_TOTAL - len(self.coins)
+        budget = self.spec.coin_total - len(self.coins)
         random.shuffle(surfaces)
         for plat in surfaces:
             if budget <= 0:
@@ -682,57 +682,29 @@ class World:
 
     # ------------------------------------------------------------------
     def _build(self):
-        # 땅(중간중간 구멍이 있다)
-        segments = [
-            (0, 1500),
-            (1640, 2900),
-            (3040, 4200),
-            (4360, 5500),
-            (5660, 6900),
-        ]
-        for left, right in segments:
+        spec = self.spec
+        for left, right in spec.segments:
             self._add_ground(left, right)
 
-        # 체크포인트
-        self.checkpoints = [Checkpoint(2000, GROUND), Checkpoint(4500, GROUND)]
+        self.checkpoints = [Checkpoint(x, GROUND) for x in spec.checkpoints]
 
-        # 벤치(6개)와 상자(7개)를 랜덤으로 배치하고, 그 윗면을 발판으로 만든다.
-        self._place_furniture(BENCH_COUNT, BOX_COUNT)
+        # 벤치와 상자를 랜덤으로 배치하고, 그 윗면을 발판으로 만든다.
+        self._place_furniture(spec.bench_count, spec.box_count)
         self._add_surfaces()
 
-        # 시작 지점 코인 줄 (발판과 무관하게 점프로 바로 닿는 높이)
-        self._coin_line(180, 400, 200)
+        for x1, x2, y in spec.coin_lines:
+            self._coin_line(x1, x2, y)
 
         # 벤치/상자 윗면 위의 코인과 회복 아이템
         self._place_pickups()
 
-        # 슬라임
-        self._add_bear(780, STAND_Y, 700, 1500)
-        self._add_bear(1250, STAND_Y, 1150, 1490)
-        self._add_bear(1750, STAND_Y, 1640, 1900)
-        self._add_bear(2450, STAND_Y, 2300, 2650)
-        self._add_bear(2810, STAND_Y, 2700, 2890)
-        self._add_bear(3250, STAND_Y, 3040, 3400)
-        self._add_bear(3600, STAND_Y, 3450, 3700)
-        self._add_bear(3960, STAND_Y, 3800, 4180)
-        self._add_bear(4550, STAND_Y, 4360, 4700)
-        self._add_bear(5050, STAND_Y, 4900, 5200)
-        self._add_bear(5450, STAND_Y, 5300, 5490)
-        self._add_bear(5900, STAND_Y, 5660, 6000)
-        self._add_bear(6300, STAND_Y, 6120, 6500)
-        self._add_bear(6600, STAND_Y, 6500, 6880)
-        # 벤치/상자 위 슬라임
-        for _ in range(4):
+        for x, left, right in spec.ground_bears:
+            self._add_bear(x, STAND_Y, left, right)
+        for _ in range(spec.surface_bears):
             self._add_bear_on_surface()
 
-        # 위습(날아다니는 적)
-        self._add_bird(1350, 300)
-        self._add_bird(2200, 430)
-        self._add_bird(3200, 330)
-        self._add_bird(4300, 350)
-        self._add_bird(5000, 430)
-        self._add_bird(5750, 320)
-        self._add_bird(6450, 400)
+        for x, y in spec.birds:
+            self._add_bird(x, y)
 
     # ------------------------------------------------------------------
     # 배경
@@ -888,10 +860,11 @@ def hud_heart_image(filled):
 class Game:
     def __init__(self):
         self.text = TextRenderer()
-        self.world = World()
+        self.stage = 1
+        self.world = World(STAGES[self.stage])
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
-        self.girl.limit_right = WORLD_W - 24
+        self.girl.limit_right = self.world.world_w - 24
         self.skill_bg = SkillBackground()
         self.hud = HUDOverlay()
 
@@ -933,10 +906,10 @@ class Game:
 
     # ------------------------------------------------------------------
     def start(self):
-        self.world = World()
+        self.world = World(STAGES[self.stage])
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
-        self.girl.limit_right = WORLD_W - 24
+        self.girl.limit_right = self.world.world_w - 24
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.state = "play"
         self.play_time = 0.0
@@ -956,6 +929,11 @@ class Game:
         self.smoke_hit = False
         self.smoke_dead = False
         self.smoke_log = []
+
+    def next_stage(self):
+        """클리어 후 다음 스테이지로. 마지막 스테이지 다음은 1스테이지다."""
+        self.stage = self.stage % len(STAGES) + 1
+        self.start()
 
     def toggle_pause(self):
         if self.state == "play":
@@ -1004,7 +982,7 @@ class Game:
         self.girl.update(dt, self.world.platforms)
 
         # 카메라
-        target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0, WORLD_W - WIDTH)
+        target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0, self.world.world_w - WIDTH)
         self.camera += (target - self.camera) * min(1.0, dt * 7.0)
 
         # 착지/점프/달리기 먼지
@@ -1395,7 +1373,7 @@ class Game:
                        "TOTAL SCORE  %06d" % self.score,
                        (245, 245, 255), "center")
         self.text.draw(20, WIDTH // 2, HEIGHT // 2 - 126,
-                       "R 키를 눌러 다시 시작", (170, 200, 230), "center")
+                       "R 키를 눌러 다음 스테이지", (170, 200, 230), "center")
 
     def _draw_gameover(self):
         pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 180,
@@ -1476,6 +1454,8 @@ def main():
                         game.start()
                     else:
                         game.girl.handle_event(ev)
+                elif game.state == "clear" and ev.key == sdl2.SDLK_r:
+                    game.next_stage()
                 elif game.state in ("title", "clear", "gameover"):
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
                                   sdl2.SDLK_r):
