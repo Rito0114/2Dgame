@@ -29,6 +29,7 @@ class StageSpec:
     time_bonus: int = 3000  # 클리어 시간 보너스의 기준 점수(시간이 지나면 줄어든다)
     bgm: str = "stage1_bgm.mp3"  # sound 폴더 안의 배경음악
     cats: tuple = ()  # 땅 위의 고양이 (x, left, right)
+    bombs: bool = False  # 하늘에서 폭탄이 떨어지는지
     # 배경/도로/울타리 그림 (sprites/object 안의 파일 이름)
     background: str = "background.png"
     background_overlay: str = "background_black.png"

@@ -43,6 +43,7 @@ from stage2 import SPEC as STAGE2_SPEC
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from lobby import Lobby
+from bomb import BombField
 from audio import Bgm, Sfx
 from ui import HUDOverlay, kill_icon
 from punch import DURATION as PUNCH_DURATION
@@ -59,6 +60,7 @@ FLOAT_DROP = 60
 # 캐릭터와 땅 위의 적이 서는 높이. 도로 그림은 GROUND 에 그대로 둔다.
 STAND_Y = GROUND - FLOAT_DROP
 FPS = 60
+PAUSE_ITEMS = ("resume", "quit")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -929,6 +931,7 @@ class Game:
         self.dust_timer = 0.0
         self.fps = 0.0
         self.renderer_name = ""
+        self.menu_index = 0
 
         rng = random.Random(5)
         self.motes = [
@@ -954,6 +957,8 @@ class Game:
         self.girl.limit_left = 24
         self.girl.limit_right = self.world.world_w - 24
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
+        self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
+                               ground_y=STAND_Y, enabled=self.world.spec.bombs)
         self.state = "play"
         self.play_time = 0.0
         self.camera = 0.0
@@ -984,6 +989,7 @@ class Game:
     def toggle_pause(self):
         if self.state == "play":
             self.state = "paused"
+            self.menu_index = 0
             self.girl.clear_keys()
             self.bgm.pause()
         elif self.state == "paused":
@@ -1051,6 +1057,7 @@ class Game:
         for enemy in self.world.enemies:
             enemy.update(dt, self.time)
         self._update_cats()
+        self._update_bombs(dt)
         self._update_bullets(dt)
 
         self._check_attack()
@@ -1097,6 +1104,16 @@ class Game:
                 mx, my = muzzle(enemy.x, enemy.y, enemy.facing)
                 self.bullets.append(Bullet(mx, my, enemy.facing))
                 enemy.next_shot += CAT_SHOT_INTERVAL
+
+    def _update_bombs(self, dt):
+        for bomb in self.bombs.update(dt, self.camera):
+            left, bottom, w, h = bomb.hit_rect()
+            if overlaps(*self.girl.rect(), left, bottom, w, h):
+                if self.girl.take_hit(bomb.x):
+                    self.sfx.play("female_deathsound.mp3")
+                    self.shake = max(self.shake, 11.0)
+            self.burst(bomb.x, STAND_Y + 20, (255, 170, 90), 22, 320, 0.6, 5)
+            self.shake = max(self.shake, 6.0)
 
     def _update_bullets(self, dt):
         girl_rect = self.girl.rect()
@@ -1359,8 +1376,10 @@ class Game:
         self.world.draw_coins(cam, self.time, shake)
         self.world.draw_hearts(cam, self.time, shake)
 
+        self.bombs.draw_warnings(art(), cam, shake)
         for enemy in self.world.enemies:
             enemy.draw(cam, self.time, shake)
+        self.bombs.draw(cam, shake)
 
         # 스킬 배경: 다른 레이어 위, 캐릭터 바로 아래
         self.skill_bg.draw(art(), WIDTH, HEIGHT)
@@ -1417,12 +1436,24 @@ class Game:
                        align=align, shadow=None)
 
     def _draw_pause(self):
-        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 170,
+        """일시정지 팝업 메뉴."""
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 150,
                               filled=True)
-        self.text.draw(56, WIDTH // 2, HEIGHT // 2 + 30, "PAUSED",
-                       (235, 240, 255), "center")
-        self.text.draw(20, WIDTH // 2, HEIGHT // 2 - 34,
-                       "P 키를 눌러 계속", (160, 185, 220), "center")
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        pico2d.draw_rectangle(cx - 210, cy - 150, cx + 210, cy + 150,
+                              20, 26, 52, 235, filled=True)
+        pico2d.draw_rectangle(cx - 210, cy - 150, cx + 210, cy + 150,
+                              120, 220, 210, 200)
+        self.text.draw(44, cx, cy + 82, "PAUSED", (235, 240, 255), "center")
+        labels = {"resume": "계속하기", "quit": "게임 종료"}
+        for i, item in enumerate(PAUSE_ITEMS):
+            selected = i == self.menu_index
+            color = (255, 236, 190) if selected else (150, 160, 190)
+            prefix = "> " if selected else "  "
+            self.text.draw(28, cx, cy + 10 - i * 56, prefix + labels[item],
+                           color, "center")
+        self.text.draw(16, cx, cy - 120, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
+                       (120, 136, 172), "center", shadow=None)
 
     def _draw_clear(self):
         pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 165,
@@ -1517,9 +1548,24 @@ def main():
                             game.next_stage()
                         else:
                             game.start()
+                elif game.state == "paused":
+                    if ev.key in (sdl2.SDLK_ESCAPE, sdl2.SDLK_p):
+                        game.toggle_pause()
+                    elif ev.key == sdl2.SDLK_UP:
+                        game.menu_index = (game.menu_index - 1) % len(PAUSE_ITEMS)
+                    elif ev.key == sdl2.SDLK_DOWN:
+                        game.menu_index = (game.menu_index + 1) % len(PAUSE_ITEMS)
+                    elif ev.key in (sdl2.SDLK_RETURN, sdl2.SDLK_SPACE):
+                        if PAUSE_ITEMS[game.menu_index] == "resume":
+                            game.toggle_pause()
+                        else:
+                            running = False
                 elif ev.key == sdl2.SDLK_ESCAPE:
-                    running = False
-                elif ev.key == sdl2.SDLK_p and game.state in ("play", "paused"):
+                    if game.state == "play":
+                        game.toggle_pause()
+                    else:
+                        running = False
+                elif ev.key == sdl2.SDLK_p and game.state == "play":
                     game.toggle_pause()
                 elif game.state == "play":
                     if game.girl.handle_event(ev):

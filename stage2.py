@@ -13,6 +13,7 @@ SPEC = replace(
     background="background_stage2.png",
     time_bonus=9000,
     bgm="stage2_bgm.mp3",
+    bombs=True,
     # 고양이는 4번째 땅(세 번째 인덱스 땅 이후)부터 나온다.
     cats=(
         (4900, 4400, 5450),
