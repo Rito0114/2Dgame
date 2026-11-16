@@ -418,6 +418,13 @@ class Checkpoint:
         self.active = False
 
 
+def death_sound(enemy):
+    """곰은 곰 사망음, 고양이와 새는 새 사망음."""
+    if enemy.kind == "bear":
+        return "bear_deathsound.mp3"
+    return "bird_deathsound.mp3"
+
+
 class Enemy:
     WIDTH = {"bear": BEAR_WIDTH, "bird": BIRD_WIDTH, "cat": CAT_WIDTH}
     HEIGHT = {"bear": BEAR_HEIGHT, "bird": BIRD_HEIGHT, "cat": CAT_HEIGHT}
@@ -446,6 +453,7 @@ class Enemy:
         self.was_visible = False  # 고양이: 지난 프레임에 화면에 있었는지
         self.fired = False  # 고양이: 이번 공격에서 총알을 쐈는지
         self.next_shot = None  # 고양이: 다음 발사 예정 시각(게임 시간). 처음에는 None
+        self.fall_target = STAND_Y  # 새: 쓰러져 떨어질 y. 구덩이 위면 화면 아래로 떨어진다.
 
     @property
     def top(self):
@@ -473,10 +481,11 @@ class Enemy:
             self.begin_attack()
         self.attack_hold = ATTACK_HOLD
 
-    def kill(self):
+    def kill(self, fall_target=STAND_Y):
         self.alive = False
         self.death_time = 0.0
         self.death_y = self.y
+        self.fall_target = fall_target
 
     def update(self, dt, time):
         self.anim_time += dt
@@ -485,7 +494,7 @@ class Enemy:
             if self.kind == "bird":
                 # 사망 모션과 같은 시간 동안 지면(STAND_Y)까지 떨어진다.
                 progress = min(1.0, self.death_time / FALL_TIME)
-                self.y = self.death_y + (STAND_Y - self.death_y) * progress * progress
+                self.y = self.death_y + (self.fall_target - self.death_y) * progress * progress
             return
         self.attack_hold = max(0.0, self.attack_hold - dt)
         if self.attack_t is not None:
@@ -1058,6 +1067,11 @@ class Game:
             self.state = "gameover"
             self.best_score = max(self.best_score, self.score)
 
+    def _fall_target(self, enemy):
+        """쓰러진 적이 떨어질 y. 땅 위면 지면, 구덩이 위면 화면 아래 바깥."""
+        on_ground = any(left <= enemy.x <= right for left, right in self.world.ground_spans)
+        return STAND_Y if on_ground else -400
+
     def _update_cats(self):
         """고양이는 처음 나타날 때부터 5초마다 총을 쏜다.
 
@@ -1114,7 +1128,8 @@ class Game:
             if not enemy.alive or enemy.last_attack == self.girl.attack_id:
                 continue
             if overlaps(*hitbox, *enemy.rect()):
-                enemy.kill()
+                enemy.kill(self._fall_target(enemy))
+                self.sfx.play(death_sound(enemy))
                 self.kill_count += 1
                 enemy.last_attack = self.girl.attack_id
                 self.score += 100
@@ -1188,7 +1203,8 @@ class Game:
                 continue
             if self.girl.dash_timer > 0.0:
                 # 대쉬 중에 닿은 적은 바로 사망한다.
-                enemy.kill()
+                enemy.kill(self._fall_target(enemy))
+                self.sfx.play(death_sound(enemy))
                 self.kill_count += 1
                 self.sfx.play("punch_sound.mp3", 0.4)
                 self.impacts.append(PunchImpact(
@@ -1206,7 +1222,8 @@ class Game:
                 and self.girl.y <= ey + eh + 34
             )
             if stomp:
-                enemy.kill()
+                enemy.kill(self._fall_target(enemy))
+                self.sfx.play(death_sound(enemy))
                 self.kill_count += 1
                 self.girl.bounce(700.0)
                 self.score += 150
