@@ -1533,6 +1533,18 @@ def renderer_name():
         return "unknown"
 
 
+def toggle_fullscreen():
+    """F12: 창 모드와 전체 화면을 바꾼다. 전체 화면에서도 게임 화면 비율을 유지한다."""
+    window = pico2d.pico2d.window
+    flags = sdl2.SDL_GetWindowFlags(window)
+    if flags & sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP:
+        sdl2.SDL_SetWindowFullscreen(window, 0)
+    else:
+        sdl2.SDL_SetWindowFullscreen(window, sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP)
+    # 게임은 WIDTH x HEIGHT 기준으로 그리므로, 창이 커져도 그 크기에 맞춰 늘린다.
+    sdl2.SDL_RenderSetLogicalSize(pico2d.pico2d.renderer, WIDTH, HEIGHT)
+
+
 def main():
     smoke = "--smoke" in sys.argv
     uncapped = "--uncapped" in sys.argv
@@ -1569,7 +1581,9 @@ def main():
             if ev.type == sdl2.SDL_QUIT:
                 running = False
             elif ev.type == sdl2.SDL_KEYDOWN:
-                if game.state in ("clear", "gameover"):
+                if ev.key == sdl2.SDLK_F12:
+                    toggle_fullscreen()
+                elif game.state in ("clear", "gameover"):
                     # 스테이지 종료 화면에서는 R 키만 받는다.
                     if ev.key == sdl2.SDLK_r:
                         if game.state == "clear":
