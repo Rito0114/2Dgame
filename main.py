@@ -127,7 +127,10 @@ class Art:
     def __init__(self):
         self.renderer = pico2d.pico2d.renderer
         self._images = {}
+        self._paints = {}
         self._texts = {}
+        # 전체 화면 전환 때 논리 크기(WIDTH x HEIGHT)를 쓰면 여기 적어 둔다.
+        self.logical = None
 
     # -- 텍스처 굽기 ----------------------------------------------------
     def bake(self, key, width, height, paint):
@@ -148,6 +151,15 @@ class Art:
             pico2d.SDL_SetTextureScaleMode(texture, pico2d.SDL_ScaleModeLinear)
         except Exception:
             pass
+        self._paint(texture, width, height, paint)
+        image = pico2d.Image(texture)
+        self._images[key] = image
+        self._paints[key] = (texture, width, height, paint)
+        return image
+
+    def _paint(self, texture, width, height, paint):
+        if self.logical:
+            sdl2.SDL_RenderSetLogicalSize(self.renderer, 0, 0)
         pico2d.SDL_SetRenderTarget(self.renderer, texture)
         pico2d.SDL_SetRenderDrawColor(self.renderer, 0, 0, 0, 0)
         pico2d.SDL_RenderClear(self.renderer)
@@ -162,9 +174,13 @@ class Art:
         finally:
             module.canvas_height = saved_height
             pico2d.SDL_SetRenderTarget(self.renderer, None)
-        image = pico2d.Image(texture)
-        self._images[key] = image
-        return image
+            if self.logical:
+                sdl2.SDL_RenderSetLogicalSize(self.renderer, *self.logical)
+
+    def repaint_all(self):
+        """화면 모드가 바뀌면 렌더 대상 텍스처의 내용이 사라지므로 다시 그린다."""
+        for texture, width, height, paint in self._paints.values():
+            self._paint(texture, width, height, paint)
 
     # -- 그리기 ---------------------------------------------------------
     def blit(self, image, x, y, width=None, height=None, alpha=255):
@@ -1542,7 +1558,10 @@ def toggle_fullscreen():
     else:
         sdl2.SDL_SetWindowFullscreen(window, sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP)
     # 게임은 WIDTH x HEIGHT 기준으로 그리므로, 창이 커져도 그 크기에 맞춰 늘린다.
+    art().logical = (WIDTH, HEIGHT)
     sdl2.SDL_RenderSetLogicalSize(pico2d.pico2d.renderer, WIDTH, HEIGHT)
+    # 화면 모드가 바뀌면 구워 둔 그림이 지워지므로 다시 굽는다.
+    art().repaint_all()
 
 
 def main():
