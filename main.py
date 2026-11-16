@@ -28,7 +28,7 @@ from lamp import Lamp
 from lobby import Lobby
 from bomb import BombField
 from audio import Bgm, Sfx
-from ui import HUDOverlay, kill_icon
+from ui import HUDOverlay, kill_icon, skill_icon_center
 from punch import DURATION as PUNCH_DURATION
 from punch import PunchImpact, draw_punch
 from bench import Bench
@@ -886,6 +886,7 @@ class Game:
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = self.world.world_w - 24
+        self.girl.dash_unlocked = self.world.spec.dash
         self.skill_bg = SkillBackground()
         self.hud = HUDOverlay()
         self.lobby = Lobby(WIDTH, HEIGHT, GROUND, STAND_Y)
@@ -939,6 +940,7 @@ class Game:
         self.girl = Girl(160, STAND_Y)
         self.girl.limit_left = 24
         self.girl.limit_right = self.world.world_w - 24
+        self.girl.dash_unlocked = self.world.spec.dash
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
@@ -1369,6 +1371,8 @@ class Game:
 
         self.girl.draw(cam, shake, self.time)
 
+        self.bombs.draw_blasts(cam, shake)
+
         for particle in self.particles:
             particle.draw(cam, shake)
         for slash in self.slashes:
@@ -1382,6 +1386,13 @@ class Game:
         a = art()
         cooldown = self.girl.dash_cooldown / Girl.DASH_COOLDOWN
         self.hud.draw(a, WIDTH, HEIGHT, self.girl.hp, cooldown)
+        # 스킬 쿨타임: 아이콘 한가운데에 남은 초를 표시하고, 0이 되면 사라진다.
+        if self.girl.dash_cooldown > 0.0:
+            icon_x, icon_y = skill_icon_center(WIDTH, HEIGHT)
+            # 폰트 그림은 아래쪽 여백(디센더) 때문에 숫자 잉크가 조금 위로 뜬다.
+            self.text.draw(24, icon_x, icon_y - 3,
+                           "%d" % math.ceil(self.girl.dash_cooldown),
+                           (255, 236, 190), "center")
         # 점수
         self.text.draw(24, 30, HEIGHT - 52,
                        "SCORE %06d" % self.score, (230, 236, 250))

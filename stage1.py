@@ -53,4 +53,6 @@ SPEC = StageSpec(
     heart_count=3,
     heart_min_segment=2,
     pit_arc_count=2,
+    # 1스테이지에서는 대쉬 스킬을 쓸 수 없다. 1스테이지를 깨면 2스테이지에서 열린다.
+    dash=False,
 )

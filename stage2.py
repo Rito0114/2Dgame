@@ -14,6 +14,8 @@ SPEC = replace(
     time_bonus=9000,
     bgm="stage2_bgm.mp3",
     bombs=True,
+    # 1스테이지를 깨고 오면 대쉬 스킬이 열려 있다.
+    dash=True,
     # 고양이는 4번째 땅(세 번째 인덱스 땅 이후)부터 나온다.
     cats=(
         (4900, 4400, 5450),

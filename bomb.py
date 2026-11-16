@@ -15,6 +15,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BOMB_FILE = os.path.join(BASE_DIR, "sprites", "object", "bomb.png")
 BOMB_SCALE = 0.12  # 원본 1024x1536 을 화면 크기로 줄이는 배율
 
+EFFECT_FILE = os.path.join(BASE_DIR, "sprites", "object", "bomb_effect.png")
+EFFECT_COLS = 5  # 효과 그림은 가로 5칸 x 세로 2칸 = 10프레임 시트다
+EFFECT_ROWS = 2
+EFFECT_FRAMES = EFFECT_COLS * EFFECT_ROWS
+EFFECT_FRAME_TIME = 0.07  # 한 칸을 보여 주는 시간(초)
+# 1부터 셀 때 5~7번째 프레임(불꽃이 가장 큰 부분)은 조금 더 오래 보여 준다.
+EFFECT_HOLD_FRAMES = (4, 5, 6)  # 0부터 센 인덱스
+EFFECT_HOLD_TIME = 0.11
+EFFECT_WIDTH = 450  # 화면에 그리는 폭발 그림의 가로(px). 이전 300px 의 1.5배
+# 효과 그림의 아래쪽 약 20px 은 비어 있어서, 불꽃 아랫부분이 발끝에 오도록 내린다.
+EFFECT_BOTTOM_PAD = 20
+# 프레임마다 보여 주는 시간과 애니메이션 전체 길이
+EFFECT_DURATIONS = tuple(
+    EFFECT_HOLD_TIME if i in EFFECT_HOLD_FRAMES else EFFECT_FRAME_TIME
+    for i in range(EFFECT_FRAMES)
+)
+EFFECT_DURATION = sum(EFFECT_DURATIONS)
+
 FALL_TIME = 1.0  # 하늘에서 지면까지 떨어지는 시간(초). 이전 5초의 5배 속도.
 WARN_TIME = 3.0  # 닿기 몇 초 전부터 타원을 보여 줄지(생성 후 닿을 때까지의 시간)
 LANDING_TIME = WARN_TIME  # 생성 후 지면에 닿기까지의 시간
@@ -22,14 +40,15 @@ DROP_START = LANDING_TIME - FALL_TIME  # 이 시간에 떨어지기 시작한다
 BLINK_TIME = 1.5  # 닿기 몇 초 전부터 타원을 깜빡일지
 BLINK_PERIOD = 0.2  # 깜빡임 한 번의 길이(켜짐/꺼짐 각각)
 
-ELLIPSE_W = 170  # 피격 타원의 가로(px)
-ELLIPSE_H = 46  # 피격 타원의 세로(px)
+ELLIPSE_W = 340  # 피격 타원의 가로(px). 위험 표시와 폭발 범위가 같다.
+ELLIPSE_H = 92  # 피격 타원의 세로(px)
 ELLIPSE_COLOR = (235, 40, 40)
 
 SPAWN_INTERVAL = 10.0  # 폭탄이 떨어지는 간격(초)
 SCREEN_W = 1280  # 화면 가로(px). 폭탄은 플레이어 화면 안에 떨어진다.
 
 _image = None
+_effect_tex = None
 
 
 def _bomb_image():
@@ -37,6 +56,13 @@ def _bomb_image():
     if _image is None:
         _image = pico2d.load_image(BOMB_FILE)
     return _image
+
+
+def _effect_image():
+    global _effect_tex
+    if _effect_tex is None:
+        _effect_tex = pico2d.load_image(EFFECT_FILE)
+    return _effect_tex
 
 
 class Bomb:
@@ -100,6 +126,55 @@ class Bomb:
                                   cx, cy, w, h)
 
 
+class Blast:
+    """폭탄이 터질 때 자리에 남는 폭발 효과 애니메이션."""
+
+    def __init__(self, x, ground_y):
+        self.x = x
+        self.ground_y = ground_y
+        self.t = 0.0
+
+    @property
+    def finished(self):
+        return self.t >= EFFECT_DURATION
+
+    def update(self, dt):
+        self.t += dt
+
+    def frame_index(self):
+        """지금 보여 줄 프레임 번호. 프레임마다 보여 주는 시간이 다르다."""
+        left = self.t
+        for index, duration in enumerate(EFFECT_DURATIONS):
+            if left < duration:
+                return index
+            left -= duration
+        return EFFECT_FRAMES - 1
+
+    def draw(self, camera_x, shake_x=0.0):
+        if self.finished:
+            return
+        image = _effect_image()
+        cell_w = image.w / EFFECT_COLS
+        cell_h = image.h / EFFECT_ROWS
+        frame = self.frame_index()
+        col = frame % EFFECT_COLS
+        row = frame // EFFECT_COLS
+        # pico2d 의 bottom 은 이미지의 아래쪽에서 잰 거리라, 첫 줄(그림의 위쪽 칸)이
+        # 애니메이션 앞부분이 되도록 뒤집어 준다.
+        sx = round(col * cell_w)
+        sw = round((col + 1) * cell_w) - sx
+        sb = round((EFFECT_ROWS - 1 - row) * cell_h)
+        sh = round((EFFECT_ROWS - row) * cell_h) - sb
+        scale = EFFECT_WIDTH / cell_w
+        w = sw * scale
+        h = sh * scale
+        cx = self.x - camera_x + shake_x
+        # 그림의 아래쪽 끝(불꽃 아랫부분)이 발끝 높이에 오도록 한다.
+        cy = self.ground_y + h * 0.5 - EFFECT_BOTTOM_PAD * scale
+        image.clip_composite_draw(sx, sb, sw, sh, 0.0, "",
+                                  cx, cy, w, h)
+
+
 class BombField:
     """스테이지 안의 폭탄 생성과 갱신을 맡는다."""
 
@@ -109,6 +184,7 @@ class BombField:
         self.ground_y = ground_y
         self.enabled = enabled
         self.bombs = []
+        self.blasts = []
         self.timer = SPAWN_INTERVAL
 
     def _random_x(self, camera_x):
@@ -142,7 +218,11 @@ class BombField:
             if bomb.landed and not was_landed:
                 bomb.exploded = True
                 landed.append(bomb)
+                self.blasts.append(Blast(bomb.x, bomb.ground_y))
         self.bombs = [b for b in self.bombs if not b.exploded]
+        for blast in self.blasts:
+            blast.update(dt)
+        self.blasts = [b for b in self.blasts if not b.finished]
         return landed
 
     def draw_warnings(self, art, camera_x, shake_x=0.0):
@@ -152,3 +232,7 @@ class BombField:
     def draw(self, camera_x, shake_x=0.0):
         for bomb in self.bombs:
             bomb.draw(camera_x, shake_x)
+
+    def draw_blasts(self, camera_x, shake_x=0.0):
+        for blast in self.blasts:
+            blast.draw(camera_x, shake_x)

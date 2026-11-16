@@ -156,6 +156,8 @@ class Girl:
         self.dash_timer = 0.0
         self.dash_cooldown = 0.0
         self.dash_invuln = 0.0
+        # 대쉬 스킬 해금 여부. 1스테이지에서는 잠겨 있다(스테이지가 정한다).
+        self.dash_unlocked = True
 
         # 이벤트(먼지/사운드용)
         self.just_jumped = False
@@ -219,6 +221,8 @@ class Girl:
 
     def request_dash(self):
         """대쉬를 시작하면 True 를 돌려준다."""
+        if not self.dash_unlocked:
+            return False
         if self.state in ("retire", "hit") or self.hit_stun > 0:
             return False
         if self.dash_timer > 0 or self.dash_cooldown > 0:

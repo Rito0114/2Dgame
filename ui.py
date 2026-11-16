@@ -22,12 +22,27 @@ KILL_ICON_FILE = os.path.join(UI_DIR, "killcounter.png")
 MAX_HP = 5
 UI_SCALE = 0.75  # UI 그림의 화면 배율(원래 크기 대비)
 
-# skill_time.png 에서 회색 원이 차지하는 세로 범위(원본 1080 기준, 위쪽이 0)
+# skill_time.png 에서 회색 원이 차지하는 범위(원본 1920x1080 기준, 왼쪽/위가 0)
 SKILL_DISC_TOP = 918
 SKILL_DISC_BOTTOM = 1060
+SKILL_DISC_LEFT = 397
+SKILL_DISC_RIGHT = 538
+SKILL_SRC_W = 1920
 SKILL_SRC_H = 1080
 
 _images = {}
+
+
+def skill_icon_center(width, height):
+    """스킬 아이콘(회색 원)의 화면 중심. y 는 pico2d 좌표(아래가 0).
+
+    UI 그림은 화면의 왼쪽 아래 모서리에 붙여서 그리므로, y 는 그림의 아래쪽에서 잰다.
+    """
+    sx = (width * UI_SCALE) / SKILL_SRC_W
+    sy = (height * UI_SCALE) / SKILL_SRC_H
+    cx = (SKILL_DISC_LEFT + SKILL_DISC_RIGHT) * 0.5 * sx
+    cy = height * UI_SCALE - (SKILL_DISC_TOP + SKILL_DISC_BOTTOM) * 0.5 * sy
+    return cx, cy
 
 
 def _image(path):
