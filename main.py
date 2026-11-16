@@ -1118,6 +1118,7 @@ class Game:
             if enemy.next_shot is not None and now >= enemy.next_shot:
                 mx, my = muzzle(enemy.x, enemy.y, enemy.facing)
                 self.bullets.append(Bullet(mx, my, enemy.facing))
+                self.sfx.play("gunfire_sound.mp3")
                 enemy.next_shot += CAT_SHOT_INTERVAL
 
     def _update_bombs(self, dt):
