@@ -1,20 +1,3 @@
-"""그림자 소녀 (Shadow Girl)
-
-pico2d 로 만든 횡스크롤 액션 플랫포머.
-
-    python main.py
-
-조작
-    A / D  또는  ← / → : 이동
-    SPACE / W / ↑       : 점프
-    J / X               : 공격
-    P                    : 일시정지
-    R                    : 재시작
-    ESC                  : 종료
-
-캐릭터 클래스는 girl.py 에 분리되어 있다.
-"""
-
 import ctypes
 import math
 import os
