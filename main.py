@@ -1106,6 +1106,7 @@ class Game:
 
     def _update_bombs(self, dt):
         for bomb in self.bombs.update(dt, self.camera):
+            self.sfx.play("bomb_sound.mp3")
             left, bottom, w, h = bomb.hit_rect()
             if overlaps(*self.girl.rect(), left, bottom, w, h):
                 if self.girl.take_hit(bomb.x):
