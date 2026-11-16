@@ -968,8 +968,18 @@ class Game:
 
     def next_stage(self):
         """클리어 후 다음 스테이지로. 마지막 스테이지 다음은 1스테이지다."""
+        was_dash = self.world.spec.dash
         self.stage = self.stage % len(STAGES) + 1
         self.start()
+        # 대쉬가 잠겨 있던 스테이지를 깨고 오면 해금 안내 팝업을 띄운다.
+        if not was_dash and self.world.spec.dash:
+            self.state = "skill_unlock"
+
+    def close_skill_unlock(self):
+        """해금 안내 팝업을 닫고 게임을 다시 시작한다."""
+        if self.state == "skill_unlock":
+            self.state = "play"
+            self.girl.clear_keys()
 
     def toggle_pause(self):
         if self.state == "play":
@@ -994,6 +1004,10 @@ class Game:
             return
 
         if self.state == "paused":
+            return
+
+        # 해금 안내 팝업이 떠 있는 동안에는 게임이 진행되지 않는다.
+        if self.state == "skill_unlock":
             return
 
         if self.state == "play":
@@ -1345,6 +1359,8 @@ class Game:
 
         if self.state == "paused":
             self._draw_pause()
+        elif self.state == "skill_unlock":
+            self._draw_skill_unlock()
         elif self.state == "clear":
             self._draw_clear()
         elif self.state == "gameover":
@@ -1385,7 +1401,8 @@ class Game:
     def _draw_hud(self):
         a = art()
         cooldown = self.girl.dash_cooldown / Girl.DASH_COOLDOWN
-        self.hud.draw(a, WIDTH, HEIGHT, self.girl.hp, cooldown)
+        self.hud.draw(a, WIDTH, HEIGHT, self.girl.hp, cooldown,
+                      dash_locked=not self.girl.dash_unlocked)
         # 스킬 쿨타임: 아이콘 한가운데에 남은 초를 표시하고, 0이 되면 사라진다.
         if self.girl.dash_cooldown > 0.0:
             icon_x, icon_y = skill_icon_center(WIDTH, HEIGHT)
@@ -1447,6 +1464,22 @@ class Game:
             self.text.draw(28, cx, cy + 10 - i * 56, prefix + labels[item],
                            color, "center")
         self.text.draw(16, cx, cy - 120, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
+                       (120, 136, 172), "center", shadow=None)
+
+    def _draw_skill_unlock(self):
+        """대쉬 스킬 해금 안내 팝업. 스페이스바로 닫는다."""
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 170,
+                              filled=True)
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        pico2d.draw_rectangle(cx - 300, cy - 130, cx + 300, cy + 130,
+                              20, 26, 52, 235, filled=True)
+        pico2d.draw_rectangle(cx - 300, cy - 130, cx + 300, cy + 130,
+                              120, 220, 210, 200)
+        self.text.draw(40, cx, cy + 62, "스킬이 해금되었습니다!",
+                       (130, 250, 225), "center")
+        self.text.draw(28, cx, cy + 2, "스킬 : 싼데안비슷한 (Q)",
+                       (255, 236, 190), "center")
+        self.text.draw(18, cx, cy - 96, "SPACE 키를 누르면 닫힙니다",
                        (120, 136, 172), "center", shadow=None)
 
     def _draw_clear(self):
@@ -1554,6 +1587,10 @@ def main():
                             game.toggle_pause()
                         else:
                             running = False
+                elif game.state == "skill_unlock":
+                    # 해금 안내 팝업은 스페이스바로만 닫는다.
+                    if ev.key == sdl2.SDLK_SPACE:
+                        game.close_skill_unlock()
                 elif ev.key == sdl2.SDLK_ESCAPE:
                     if game.state == "play":
                         game.toggle_pause()
