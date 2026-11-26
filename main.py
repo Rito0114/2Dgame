@@ -65,6 +65,8 @@ STAGE_TITLE_LARGE_SIZE = 64
 STAGE_TITLE_SMALL_SIZE = 26
 WARNING_TEXT = "WARNING"
 WARNING_SIZE = 96
+# 팝업이 뜨자마자 연속 입력으로 닫히지 않도록 짧게 입력을 막는다.
+SKILL_POPUP_INPUT_DELAY = 0.35
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -953,6 +955,7 @@ class Game:
 
         self.state = "title"
         self.pending_skill_unlock = False
+        self.skill_popup_time = 0.0
         self.intro_mode = "title"
         self.intro_time = 0.0
         self.time = 0.0
@@ -1014,8 +1017,12 @@ class Game:
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
-        # 대쉬 해금 팝업은 시나리오/타이틀 연출이 끝난 뒤에 띄운다.
-        self.pending_skill_unlock = bool(skill_unlock)
+        # 스킬 안내는 스테이지 2 오프닝(시나리오 → 타이틀)이 끝난 뒤에 띄운다.
+        # 일반 클리어/개발자 이동 어느 경로로 들어와도 같게 표시한다.
+        self.pending_skill_unlock = bool(
+            skill_unlock or (self.stage == 2 and not skip_story
+                             and not self.smoke and not self.skip_story))
+        self.skill_popup_time = 0.0
         # 스테이지별 오프닝을 전투 전에 보여준다. smoke/개발자 이동은 생략.
         show_story = (self.stage in story.STORY_BY_STAGE
                       and not skip_story and not self.smoke
@@ -1057,7 +1064,7 @@ class Game:
         """클리어 후 다음 스테이지로. 마지막 스테이지 다음은 1스테이지다."""
         was_dash = self.world.spec.dash
         self.stage = self.stage % len(STAGES) + 1
-        # 대쉬가 잠겨 있던 스테이지를 깨고 오면 시나리오 뒤에 팝업을 띄운다.
+        # 스테이지 1을 클리어하고 오면 시나리오 뒤에 스킬 안내를 띄운다.
         unlock = not was_dash and STAGES[self.stage].dash
         self.start(skill_unlock=unlock)
 
@@ -1124,6 +1131,7 @@ class Game:
         if self.pending_skill_unlock:
             self.state = "skill_unlock"
             self.pending_skill_unlock = False
+            self.skill_popup_time = 0.0
         self.girl.clear_keys()
         pico2d.hide_cursor()
 
@@ -1367,7 +1375,10 @@ class Game:
             return
 
         # 해금 안내 팝업/개발자 메뉴가 떠 있는 동안에는 게임이 진행되지 않는다.
-        if self.state in ("skill_unlock", "dev_menu"):
+        if self.state == "skill_unlock":
+            self.skill_popup_time += dt
+            return
+        if self.state == "dev_menu":
             return
 
         if self.state == "cutscene":
@@ -2379,7 +2390,9 @@ def main():
                             running = False
                 elif game.state == "skill_unlock":
                     # 해금 안내 팝업은 스페이스바로만 닫는다.
-                    if ev.key == sdl2.SDLK_SPACE:
+                    # 연속 입력을 막아 팝업이 스쳐 지나가지 않게 한다.
+                    if (ev.key == sdl2.SDLK_SPACE
+                            and game.skill_popup_time >= SKILL_POPUP_INPUT_DELAY):
                         game.close_skill_unlock()
                 elif ev.key == sdl2.SDLK_ESCAPE:
                     if game.state == "play":
