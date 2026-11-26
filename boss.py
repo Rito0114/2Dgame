@@ -16,7 +16,10 @@ from boss_sprites import ATTACK_NAMES, BOSS_SPRITES
 BOSS_SCALE = SCALE * 1.9  # 일반 곰보다 약 1.9배 크게
 BOSS_WIDTH = int(BEAR_WIDTH * BOSS_SCALE / SCALE)
 BOSS_HEIGHT = int(BEAR_HEIGHT * BOSS_SCALE / SCALE)
-BOSS_HP = 8  # 쓰러뜨리는 데 필요한 공격 횟수
+BOSS_HP = 100  # 보스 최대 체력
+# 페이즈 구간: 1페이즈 100~67, 2페이즈 66~34, 3페이즈 33~0
+PHASE_HP_RANGES = ((100, 67), (66, 34), (33, 0))
+PHASE_MIN_HP = (67, 34)  # 각 페이즈를 유지하는 최소 체력
 BOSS_SPEED = 105.0  # 플레이어를 향해 걸어가는 속도
 FLASH_TIME = 0.14  # 맞았을 때 하얗게 번쩍이는 시간
 
@@ -25,6 +28,15 @@ IDLE_INTRO_TIME = 1.2  # 등장한 뒤 걷기 전까지 대기하는 시간
 HIT_TIME = BOSS_SPRITES["hit"].duration
 DEATH_TIME = (BOSS_SPRITES["retire"].duration
               + BOSS_SPRITES["retire2"].duration + 0.4)
+
+
+def phase_for_hp(hp):
+    """체력에 따른 보스 페이즈(1~3)를 돌려준다."""
+    if hp >= PHASE_MIN_HP[0]:
+        return 1
+    if hp >= PHASE_MIN_HP[1]:
+        return 2
+    return 3
 
 
 class Boss:
@@ -57,6 +69,11 @@ class Boss:
     @property
     def defeated(self):
         return self.hp <= 0
+
+    @property
+    def phase(self):
+        """현재 체력에 해당하는 페이즈(1~3)."""
+        return phase_for_hp(self.hp)
 
     def rect(self):
         return (self.x - self.width * 0.5, self.y,

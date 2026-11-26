@@ -32,6 +32,7 @@ class StageSpec:
     bombs: bool = False  # 하늘에서 폭탄이 떨어지는지
     dash: bool = True  # 대쉬 스킬을 쓸 수 있는지(1스테이지에서는 잠겨 있다)
     boss: bool = False  # 큰 곰 보스가 나오는 스테이지인지
+    portal: bool = True  # 골 포탈을 표시할지(보스 스테이지에서는 숨긴다)
     boss_x: float = 0.0  # 보스의 등장 x
     boss_left: float = 0.0  # 보스가 오갈 수 있는 왼쪽 끝
     boss_right: float = 0.0  # 보스가 오갈 수 있는 오른쪽 끝

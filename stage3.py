@@ -1,6 +1,6 @@
 """3스테이지: 짧은 보스 전용 맵.
 
-가로 1600px 짜리 한 구간뿐이다. 오른쪽에는 빛의 문이 있지만,
+가로 1600px 짜리 한 구간뿐이다. 포탈/코인/회복 아이템은 없고,
 큰 곰 보스를 쓰러뜨리면 즉시 스테이지가 클리어된다.
 """
 
@@ -12,7 +12,7 @@ SPEC = StageSpec(
     goal_x=1500,
     segments=((0, 1600),),
     checkpoints=(),
-    coin_lines=((180, 460, 200),),
+    coin_lines=(),
     ground_bears=(),
     birds=(),
     surface_bears=0,
@@ -20,14 +20,15 @@ SPEC = StageSpec(
     box_count=2,
     furniture_min_x=180,
     furniture_max_x=900,
-    coin_total=14,
-    heart_count=2,
+    coin_total=0,
+    heart_count=0,
     heart_min_segment=0,
     pit_arc_count=0,
     time_bonus=3000,
     bgm="stage2_bgm.mp3",
     dash=True,
     boss=True,
+    portal=False,
     boss_x=1180,
     boss_left=960,
     boss_right=1540,

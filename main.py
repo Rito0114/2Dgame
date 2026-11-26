@@ -24,7 +24,7 @@ from girl import Girl
 from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from stage3 import SPEC as STAGE3_SPEC
-from boss import Boss
+from boss import Boss, PHASE_HP_RANGES
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from lobby import Lobby
@@ -595,6 +595,9 @@ class World:
         self.checkpoints = []
         self.goal_x = spec.goal_x
         self.goal_y = GROUND
+        self.portal = spec.portal  # 포탈이 없는 스테이지에서는 골을 그리지 않는다
+        self.has_coins = bool(spec.coin_total or spec.coin_lines
+                              or spec.pit_arc_count)
         obj = os.path.join(BASE_DIR, "sprites", "object")
         self.background = Background(os.path.join(obj, spec.background),
                                      os.path.join(obj, spec.background_overlay))
@@ -1630,7 +1633,9 @@ class Game:
     def _check_goal(self):
         if self.state != "play":
             return
-        # 보스 스테이지에서는 보스를 쓰러뜨려야 문이 열린다(쓰러뜨리면 즉시 클리어).
+        # 보스 스테이지에는 포탈이 없다. 보스를 쓰러뜨리면 즉시 클리어된다.
+        if not self.world.portal:
+            return
         if self.world.boss is not None and not self.world.boss.defeated:
             return
         if abs(self.girl.x - self.world.goal_x) < 46:
@@ -1984,7 +1989,8 @@ class Game:
         self.world.draw_fence(cam, shake)
         self.world.draw_platforms(cam, shake)
         self.world.draw_checkpoints(cam, self.time, shake)
-        self.world.draw_goal(cam, self.time, shake)
+        if self.world.portal:
+            self.world.draw_goal(cam, self.time, shake)
         self.world.draw_coins(cam, self.time, shake)
         self.world.draw_hearts(cam, self.time, shake)
 
@@ -2026,12 +2032,16 @@ class Game:
         # 점수
         self.text.draw(24, 30, HEIGHT - 52,
                        "SCORE %06d" % self.score, (230, 236, 250))
-        # 코인 (점수 바로 아래)
-        a.blit(coin_image(), 44, HEIGHT - 94, 28, 28)
-        self.text.draw(24, 66, HEIGHT - 94,
-                       "x %02d" % self.coin_count, (240, 220, 150))
-        a.blit(kill_icon(), 44, HEIGHT - 130, 44, 36)
-        self.text.draw(24, 66, HEIGHT - 130,
+        # 코인 (점수 바로 아래) — 코인이 없는 스테이지에서는 숨긴다.
+        kill_y = HEIGHT - 130
+        if self.world.has_coins:
+            a.blit(coin_image(), 44, HEIGHT - 94, 28, 28)
+            self.text.draw(24, 66, HEIGHT - 94,
+                           "x %02d" % self.coin_count, (240, 220, 150))
+        else:
+            kill_y = HEIGHT - 94
+        a.blit(kill_icon(), 44, kill_y, 44, 36)
+        self.text.draw(24, 66, kill_y,
                        "x %02d" % self.kill_count, (240, 200, 200))
         minutes = int(self.play_time) // 60
         seconds = int(self.play_time) % 60
@@ -2059,7 +2069,8 @@ class Game:
         boss = self.world.boss
         cx = WIDTH * 0.5
         y = HEIGHT - 116
-        self.text.draw(20, cx, y + 22, "보스", (255, 210, 170), "center")
+        self.text.draw(20, cx, y + 22, "보스  PHASE %d / 3" % boss.phase,
+                       (255, 210, 170), "center")
         left, right = cx - 200, cx + 200
         pico2d.draw_rectangle(left, y - 5, right, y + 5, 40, 24, 34, 220,
                               filled=True)
@@ -2069,6 +2080,10 @@ class Game:
         if ratio > 0.0:
             pico2d.draw_rectangle(left, y - 4, left + 400 * ratio, y + 4,
                                   255, 120, 90, 240, filled=True)
+        # 페이즈 경계선: 67(1→2), 34(2→3)
+        for high, low in PHASE_HP_RANGES[:-1]:
+            mark_x = left + 400 * low / boss.max_hp
+            pico2d.draw_line(mark_x, y - 6, mark_x, y + 6, 20, 20, 28)
         self.text.draw(16, cx, y - 28,
                        "%d / %d" % (boss.hp, boss.max_hp),
                        (240, 200, 190), "center", shadow=None)
