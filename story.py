@@ -1,4 +1,4 @@
-"""스테이지 1 오프닝 시나리오 데이터와 재생기.
+"""스테이지별 오프닝 시나리오 데이터와 재생기.
 
 UI 는 main.py 의 Art/TextRenderer 를 빌려 쓰고, 이 모듈은 대사 순서와
 효과(페이드/흔들림/연기/소리cue)의 타이밍만 관리한다.
@@ -113,16 +113,96 @@ STAGE1_STORY = (
 )
 
 
+# 스테이지 2: 중심지 진입 직후, 스킬 정보 팝업 전에 재생된다.
+STAGE2_STORY = (
+    _effect("fade_in"),
+
+    _line("엘마", "브리타니아 정보국, 요원 엘마입니다."),
+    _line("엘마", "외곽 구역의 적을 모두 정리하고 중심지에 진입했습니다."),
+    _line("국장", "수고했네, 엘마. 생각보다 빠르게 처리했군."),
+    _line("국장", "그런데... 한 가지 좋지 않은 소식이 있네."),
+    _line("엘마", "..."),
+    _line("엘마", "제발 그 말은 하지 마세요."),
+    _line("엘마", "국장님 입에서 그 말이 나올 때마다 꼭 일이 커지더라고요."),
+    _line("국장", "하하... 자네도 참 눈치가 빠르군."),
+    _line("엘마", "웃으면서 넘길 일이 아니잖아요!"),
+    _line("국장", "아무튼, 새로 입수한 정보에 따르면 루나폴 놈들이 화기를 소지하고 있다고 하네."),
+    _line("엘마", "...화기요?"),
+    _line("국장", "그래. 권총을 보유하고 있다는군."),
+    _line("엘마", "잠깐만요. 지금까지 상대했던 놈들은 고작 몽둥이나 휘두르던 녀석들이었잖아요?"),
+    _line("국장", "그것뿐만이 아닐세."),
+    _line("엘마", "...설마요."),
+    _line("국장", "박격포까지 보유하고 있다는 정보가 들어왔네."),
+    _line("엘마", "**박격포요?!**"),
+    _line("국장", "그래. 아무래도 이번에는 제대로 무장한 모양이야."),
+    _line("엘마", "아니, 잠깐만요!"),
+    _line("엘마", "박격포라면 포탄을 쏘는 그 박격포 말씀이시죠?!"),
+    _line("국장", "다른 박격포도 있나?"),
+    _line("엘마", "그걸 지금 농담이라고 하시는 거예요?!"),
+    _line("국장", "아무튼 조심하게. 직격당하면 부상 정도로 끝나지는 않을 테니 말이야."),
+    _line("엘마", "..."),
+    _line("엘마", "국장님."),
+    _line("엘마", "저, 지금이라도 사직서 제출하면 안 될까요?"),
+    _line("국장", "안 되겠지?"),
+    _line("엘마", "...진짜 빌어먹을 직장이네."),
+    _line("국장", "하하. 그래도 너무 걱정하지 말게."),
+    _line("국장", "자네에게 도움이 될 만한 물건을 하나 보내두었네."),
+    _line("엘마", "물건이요?"),
+    _line("국장", "임플란트일세. 전투에 활용할 수 있도록 특별히 준비했네."),
+    _line("국장", "자세한 사용법은 전달된 자료를 참고하도록 하게."),
+    _line("엘마", "아니, 잠깐만요. 임플란트라니, 그게 무슨..."),
+    _line("국장", "그럼 행운을 빌겠네. 임무가 끝나면 연락하게."),
+    _line("엘마", "국장님? 잠깐만요!"),
+
+    _effect("comm_end"),
+
+    _line("엘마", "..."),
+    _line("엘마", "국장님?"),
+    _line("엘마", "야?!"),
+    _line("엘마", "이 망할 국장 놈아!!"),
+
+    _effect("silence"),
+
+    _line("엘마", "하아..."),
+    _line("엘마", "좋아. 일단 이 임플란트라는 것부터 확인해 보자."),
+)
+
+STORY_BY_STAGE = {
+    1: STAGE1_STORY,
+    2: STAGE2_STORY,
+}
+
+# 대사 종료 후 화면 중앙에 띄우는 두 줄(큰 제목, 작은 부제).
+TITLE_BY_STAGE = {
+    1: ("STAGE 1", "루나폴 갱을 소탕하고 중심지로 진입하라"),
+    2: ("STAGE 2", "무장한 루나폴을 저지하고 임무를 완수하라"),
+}
+
+
+def story_steps(stage):
+    """해당 스테이지의 시나리오 단계를 돌려준다. 없으면 빈 튜플."""
+    return STORY_BY_STAGE.get(stage, ())
+
+
+def stage_title(stage):
+    """(큰 제목, 작은 부제). 정의되지 않은 스테이지는 제목을 숨긴다."""
+    return TITLE_BY_STAGE.get(stage, ("", ""))
+
+
 class StoryPlayer:
     """대사를 한 글자씩 보여주고, 입력으로만 다음 턴으로 넘어간다."""
 
-    def __init__(self, width, height):
+    def __init__(self, width, height, stage=1):
         self.width = width
         self.height = height
-        self.steps = STAGE1_STORY
+        self.stage = stage
+        self.steps = story_steps(stage)
         self.reset()
 
-    def reset(self):
+    def reset(self, stage=None):
+        if stage is not None:
+            self.stage = stage
+            self.steps = story_steps(stage)
         self.index = 0
         self.elapsed = 0.0
         self.finished = False
@@ -230,7 +310,7 @@ class StoryPlayer:
         return self._on_enter(self.current())
 
     def update(self, dt):
-        """글자/연출 타이밍만 흘려보낸다. 턴은 입력으로만 넘어간다."""
+        """대사는 타이핑만, 빈 연출 턴은 시간이 지나면 자동으로 넘어간다."""
         if self.finished:
             return
         step = self.current()
@@ -251,3 +331,8 @@ class StoryPlayer:
                 if puff[1] > self.height + 80:
                     puff[1] = -80
                     puff[0] = random.uniform(0, self.width)
+
+        # 괄호 연출(빈 턴)은 스페이스 없이 이어진다. 대사는 입력 대기.
+        if step["kind"] == "effect" and self.elapsed >= self.duration(step):
+            return self.advance()
+        return None

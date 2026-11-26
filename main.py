@@ -57,6 +57,12 @@ STORY_TEXT_Y = 130
 STORY_TEXT_SIZE = 26
 STORY_LINE_GAP = 30
 STORY_TEXT_WIDTH = 820
+# 대사 종료 후 대화 UI 가 사라지고 스테이지 제목이 나타나는 연출.
+STORY_UI_FADE_TIME = 1.10
+STAGE_TITLE_FADE_IN = 0.35
+STAGE_TITLE_HOLD = 1.60
+STAGE_TITLE_LARGE_SIZE = 64
+STAGE_TITLE_SMALL_SIZE = 26
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -944,6 +950,8 @@ class Game:
         self.story_images = {}
 
         self.state = "title"
+        self.pending_skill_unlock = False
+        self.intro_time = 0.0
         self.time = 0.0
         self.play_time = 0.0
         self.camera = 0.0
@@ -991,7 +999,7 @@ class Game:
         self.smoke_log = []
 
     # ------------------------------------------------------------------
-    def start(self, skip_story=False):
+    def start(self, skip_story=False, skill_unlock=False):
         self.world = World(STAGES[self.stage])
         self.bgm.play(self.world.spec.bgm)
         self.girl = Girl(160, STAND_Y)
@@ -1003,15 +1011,23 @@ class Game:
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
-        # 스테이지 1은 전투 전에 시나리오를 보여준다. smoke/개발자 이동은 생략.
-        if (self.stage == 1 and not skip_story and not self.smoke
-                and not self.skip_story):
-            first = self.story.reset()
+        # 대쉬 해금 팝업은 시나리오/타이틀 연출이 끝난 뒤에 띄운다.
+        self.pending_skill_unlock = bool(skill_unlock)
+        # 스테이지별 오프닝을 전투 전에 보여준다. smoke/개발자 이동은 생략.
+        show_story = (self.stage in story.STORY_BY_STAGE
+                      and not skip_story and not self.smoke
+                      and not self.skip_story)
+        if show_story:
+            first = self.story.reset(self.stage)
             self.state = "cutscene"
             self._apply_story_effect(first)
         else:
             self.state = "play"
+            if self.pending_skill_unlock:
+                self.state = "skill_unlock"
+                self.pending_skill_unlock = False
         self.play_time = 0.0
+        self.intro_time = 0.0
         self.camera = 0.0
         self.shake = 0.0
         self.score = 0
@@ -1037,10 +1053,9 @@ class Game:
         """클리어 후 다음 스테이지로. 마지막 스테이지 다음은 1스테이지다."""
         was_dash = self.world.spec.dash
         self.stage = self.stage % len(STAGES) + 1
-        self.start()
-        # 대쉬가 잠겨 있던 스테이지를 깨고 오면 해금 안내 팝업을 띄운다.
-        if not was_dash and self.world.spec.dash:
-            self.state = "skill_unlock"
+        # 대쉬가 잠겨 있던 스테이지를 깨고 오면 시나리오 뒤에 팝업을 띄운다.
+        unlock = not was_dash and STAGES[self.stage].dash
+        self.start(skill_unlock=unlock)
 
     def close_skill_unlock(self):
         """해금 안내 팝업을 닫고 게임을 다시 시작한다."""
@@ -1049,7 +1064,7 @@ class Game:
             self.girl.clear_keys()
 
     # ------------------------------------------------------------------
-    # 스테이지 1 오프닝 시나리오
+    # 스테이지 오프닝 시나리오
     # ------------------------------------------------------------------
     def advance_story(self):
         """다음 대사(또는 빈 연출 턴)로 넘어간다."""
@@ -1057,7 +1072,7 @@ class Game:
             return
         step = self.story.advance()
         if self.story.finished:
-            self.finish_cutscene()
+            self.begin_stage_intro()
         elif step is not None:
             self._apply_story_effect(step)
 
@@ -1070,12 +1085,25 @@ class Game:
         else:
             self.advance_story()
 
-    def finish_cutscene(self):
-        """ESC 또는 마지막 연출 후 전투로 들어간다."""
+    def begin_stage_intro(self):
+        """마지막 대사/연출이 끝나면 UI 페이드아웃 → STAGE 1 타이틀로 간다."""
         if self.state != "cutscene":
             return
         self.story.finished = True
+        self.state = "stage_intro"
+        self.intro_time = 0.0
+        self.girl.clear_keys()
+        pico2d.hide_cursor()
+
+    def finish_cutscene(self):
+        """ESC 건너뛰기 또는 타이틀 연출 종료 후 전투로 들어간다."""
+        if self.state not in ("cutscene", "stage_intro"):
+            return
+        self.story.finished = True
         self.state = "play"
+        if self.pending_skill_unlock:
+            self.state = "skill_unlock"
+            self.pending_skill_unlock = False
         self.girl.clear_keys()
         pico2d.hide_cursor()
 
@@ -1230,6 +1258,9 @@ class Game:
         if self.state == "cutscene":
             self.story_input()
             return True
+        if self.state == "stage_intro":
+            self.finish_cutscene()
+            return True
         if self.state == "paused":
             idx = hit_index(self.pause_item_rects(), x, y)
             if idx is None:
@@ -1306,14 +1337,28 @@ class Game:
 
         if self.state == "cutscene":
             self._update_cutscene(dt)
+        elif self.state == "stage_intro":
+            self._update_stage_intro(dt)
         elif self.state == "play":
             self._update_play(dt)
         else:
             self._update_effects(dt)
 
     def _update_cutscene(self, dt):
-        self.story.update(dt)
+        step = self.story.update(dt)
+        if step is not None:
+            self._apply_story_effect(step)
+        if self.story.finished:
+            self.begin_stage_intro()
+            return
         self._update_effects(dt)
+
+    def _update_stage_intro(self, dt):
+        self.intro_time += dt
+        self._update_effects(dt)
+        total = STORY_UI_FADE_TIME + STAGE_TITLE_FADE_IN + STAGE_TITLE_HOLD
+        if self.intro_time >= total:
+            self.finish_cutscene()
 
     def _update_motes(self, dt):
         for mote in self.motes:
@@ -1717,10 +1762,14 @@ class Game:
     def draw(self):
         self.shake_x = random.uniform(-self.shake, self.shake) * 0.6
 
-        if (self.state == "cutscene"
+        if (self.state in ("cutscene", "stage_intro")
                 or (self.state == "dev_menu"
-                    and self.dev_prev_state == "cutscene")):
-            self._draw_cutscene()
+                    and self.dev_prev_state in ("cutscene", "stage_intro"))):
+            shown = self.state if self.state != "dev_menu" else self.dev_prev_state
+            if shown == "cutscene":
+                self._draw_cutscene()
+            else:
+                self._draw_stage_intro()
             if self.state == "dev_menu":
                 self._draw_dev_menu()
             return
@@ -1819,6 +1868,52 @@ class Game:
         if fade > 0:
             pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 0, 0, 0, fade,
                                   filled=True)
+
+    def _story_ui_alpha(self):
+        """대화 UI 페이드아웃 알파(0~255)."""
+        if self.state == "cutscene":
+            return 255
+        if self.state != "stage_intro":
+            return 0
+        t = clamp(self.intro_time / STORY_UI_FADE_TIME, 0.0, 1.0)
+        return int(255 * (1.0 - t))
+
+    def _stage_title_alpha(self):
+        """UI 가 다 사라진 뒤 나타나는 제목의 표시 비율(0~1)."""
+        if self.state != "stage_intro":
+            return 0.0
+        t = (self.intro_time - STORY_UI_FADE_TIME) / STAGE_TITLE_FADE_IN
+        return clamp(t, 0.0, 1.0)
+
+    def _draw_stage_intro(self):
+        a = art()
+        # 시나리오와 같은 어두운 게임플레이 화면 위에 연출을 겹친다.
+        self.world.draw_background(self.camera, self.time, self.shake_x)
+        self._draw_world()
+        self.world.draw_motes(self.motes)
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 0, 0, 0, 118, filled=True)
+
+        # 이름표/대사창이 들어 있는 PNG 자체를 서서히 투명하게 만든다.
+        ui_alpha = self._story_ui_alpha()
+        if ui_alpha > 0:
+            portrait = self._story_portrait(self.story.speaker)
+            if portrait is not None:
+                a.blit(portrait, WIDTH * 0.5 + self.shake_x, HEIGHT * 0.5,
+                       WIDTH, HEIGHT, ui_alpha)
+
+        # UI 가 완전히 사라진 뒤 중앙에 두 줄을 띄운다.
+        title_alpha = self._stage_title_alpha()
+        if title_alpha > 0.0:
+            cx, cy = WIDTH // 2, HEIGHT // 2
+            big = tuple(int(c * title_alpha) for c in (255, 222, 150))
+            small = tuple(int(c * title_alpha) for c in (232, 238, 250))
+            title, subtitle = story.stage_title(self.stage)
+            if title:
+                self.text.draw(STAGE_TITLE_LARGE_SIZE, cx, cy + 34, title,
+                               big, "center", shadow=None)
+            if subtitle:
+                self.text.draw(STAGE_TITLE_SMALL_SIZE, cx, cy - 42, subtitle,
+                               small, "center", shadow=None)
 
     def _draw_world(self):
         cam = self.camera
@@ -2183,6 +2278,10 @@ def main():
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN):
                         game.story_input()
                     elif ev.key == sdl2.SDLK_ESCAPE:
+                        game.finish_cutscene()
+                elif game.state == "stage_intro":
+                    if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
+                                  sdl2.SDLK_ESCAPE):
                         game.finish_cutscene()
                 elif game.state in ("clear", "gameover"):
                     # 스테이지 종료 화면에서는 R 키만 받는다.
