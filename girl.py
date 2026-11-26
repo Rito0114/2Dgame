@@ -158,6 +158,9 @@ class Girl:
         self.dash_invuln = 0.0
         # 대쉬 스킬 해금 여부. 1스테이지에서는 잠겨 있다(스테이지가 정한다).
         self.dash_unlocked = True
+        # 개발자 메뉴 옵션(무적, 스킬 쿨타임 0초).
+        self.dev_invincible = False
+        self.dev_no_cooldown = False
 
         # 이벤트(먼지/사운드용)
         self.just_jumped = False
@@ -225,10 +228,12 @@ class Girl:
             return False
         if self.state in ("retire", "hit") or self.hit_stun > 0:
             return False
-        if self.dash_timer > 0 or self.dash_cooldown > 0:
+        if self.dash_timer > 0 or (self.dash_cooldown > 0
+                                   and not self.dev_no_cooldown):
             return False
         self.dash_timer = self.DASH_TIME
-        self.dash_cooldown = self.DASH_COOLDOWN
+        self.dash_cooldown = (0.0 if self.dev_no_cooldown
+                              else self.DASH_COOLDOWN)
         self.attack_timer = 0.0
         self.anim_time = 0.0
         return True
@@ -292,8 +297,8 @@ class Girl:
 
     def take_hit(self, source_x):
         # 대쉬 중에는 무적이다.
-        if (self.state == "retire" or self.invuln > 0 or self.dash_timer > 0
-                or self.dash_invuln > 0):
+        if (self.dev_invincible or self.state == "retire" or self.invuln > 0
+                or self.dash_timer > 0 or self.dash_invuln > 0):
             return False
         self.hp -= 1
         self.invuln = 1.25

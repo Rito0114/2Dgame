@@ -81,8 +81,12 @@ def _retire_cell(sheet, frame):
     return left, sheet.h - bottom, width, bottom - top
 
 
-def draw_bear(x, y, facing, state, t, camera_x=0.0, shake_x=0.0):
-    """곰을 그린다. (x, y) 는 발밑 중앙 좌표. state 는 walk / attack / retire."""
+def draw_bear(x, y, facing, state, t, camera_x=0.0, shake_x=0.0,
+              scale=SCALE):
+    """곰을 그린다. (x, y) 는 발밑 중앙 좌표. state 는 walk / attack / retire.
+
+    scale 을 키우면 보스처럼 큰 곰을 그릴 수 있다.
+    """
     center_x = x - camera_x + shake_x
     flip = "h" if facing < 0 else ""
 
@@ -102,8 +106,8 @@ def draw_bear(x, y, facing, state, t, camera_x=0.0, shake_x=0.0):
         # 패드는 셀 아래쪽 기준이고, 잘라낸 아래쪽은 CELL_INSET 만큼 위에 있다.
         foot = pads[frame] - CELL_INSET
 
-    center_y = y + height * SCALE * 0.5 - foot * SCALE
+    center_y = y + height * scale * 0.5 - foot * scale
     sheet.clip_composite_draw(
         left, bottom, width, height, 0.0, flip,
-        center_x, center_y, width * SCALE, height * SCALE,
+        center_x, center_y, width * scale, height * scale,
     )

@@ -23,6 +23,8 @@ from dash import SkillBackground
 from girl import Girl
 from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
+from stage3 import SPEC as STAGE3_SPEC
+from boss import Boss
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from lobby import Lobby
@@ -44,6 +46,7 @@ FLOAT_DROP = 60
 STAND_Y = GROUND - FLOAT_DROP
 FPS = 60
 PAUSE_ITEMS = ("resume", "quit")
+DEV_ITEMS = ("invincible", "free_stage", "no_cooldown")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -544,7 +547,7 @@ class Enemy:
                       camera_x, shake_x)
 
 
-STAGES = {1: STAGE1_SPEC, 2: STAGE2_SPEC}
+STAGES = {1: STAGE1_SPEC, 2: STAGE2_SPEC, 3: STAGE3_SPEC}
 
 
 class World:
@@ -566,6 +569,8 @@ class World:
         self.fence = Fence(os.path.join(obj, spec.fence))
         self.ground_spans = []
         self.furniture = []  # (종류, 그림 객체, 그림 중심 x)
+        self.boss = (Boss(spec.boss_x, STAND_Y, spec.boss_left, spec.boss_right)
+                     if spec.boss else None)
         self._build()
 
     # ------------------------------------------------------------------
@@ -932,6 +937,12 @@ class Game:
         self.fps = 0.0
         self.renderer_name = ""
         self.menu_index = 0
+        # 개발자 메뉴(F11) 설정. 스테이지를 바꿔도 유지된다.
+        self.dev_index = 0
+        self.dev_prev_state = None
+        self.dev_invincible = False
+        self.dev_free_stage = False
+        self.dev_no_cooldown = False
 
         rng = random.Random(5)
         self.motes = [
@@ -957,6 +968,8 @@ class Game:
         self.girl.limit_left = 24
         self.girl.limit_right = self.world.world_w - 24
         self.girl.dash_unlocked = self.world.spec.dash
+        self.girl.dev_invincible = self.dev_invincible
+        self.girl.dev_no_cooldown = self.dev_no_cooldown
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
@@ -997,6 +1010,36 @@ class Game:
             self.state = "play"
             self.girl.clear_keys()
 
+    def toggle_dev_menu(self):
+        """F11: 어느 화면에서든 개발자 메뉴를 열고 닫는다."""
+        if self.state == "dev_menu":
+            self.state = self.dev_prev_state or "play"
+            return
+        self.dev_prev_state = self.state
+        self.dev_index = 0
+        self.girl.clear_keys()
+        self.state = "dev_menu"
+
+    def toggle_dev_option(self):
+        """개발자 메뉴에서 선택한 항목을 켜거나 끈다."""
+        item = DEV_ITEMS[self.dev_index]
+        if item == "invincible":
+            self.dev_invincible = not self.dev_invincible
+            self.girl.dev_invincible = self.dev_invincible
+        elif item == "free_stage":
+            self.dev_free_stage = not self.dev_free_stage
+        else:
+            self.dev_no_cooldown = not self.dev_no_cooldown
+            self.girl.dev_no_cooldown = self.dev_no_cooldown
+            if self.dev_no_cooldown:
+                self.girl.dash_cooldown = 0.0
+
+    def cycle_dev_stage(self, direction):
+        """개발자 메뉴에서 스테이지를 자유롭게 바꾼다(1→2→3→1)."""
+        self.stage = (self.stage - 1 + direction) % len(STAGES) + 1
+        self.dev_prev_state = None
+        self.start()
+
     def toggle_pause(self):
         if self.state == "play":
             self.state = "paused"
@@ -1022,8 +1065,8 @@ class Game:
         if self.state == "paused":
             return
 
-        # 해금 안내 팝업이 떠 있는 동안에는 게임이 진행되지 않는다.
-        if self.state == "skill_unlock":
+        # 해금 안내 팝업/개발자 메뉴가 떠 있는 동안에는 게임이 진행되지 않는다.
+        if self.state in ("skill_unlock", "dev_menu"):
             return
 
         if self.state == "play":
@@ -1050,6 +1093,8 @@ class Game:
 
         self._prev_girl_x = self.girl.x
         self.girl.update(dt, self.world.platforms)
+        if self.dev_no_cooldown:
+            self.girl.dash_cooldown = 0.0
 
         # 카메라
         target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0, self.world.world_w - WIDTH)
@@ -1071,6 +1116,8 @@ class Game:
 
         for enemy in self.world.enemies:
             enemy.update(dt, self.time)
+        if self.world.boss is not None:
+            self.world.boss.update(dt, self.girl.x)
         self._update_cats()
         self._update_bombs(dt)
         self._update_bullets(dt)
@@ -1172,6 +1219,33 @@ class Game:
                 self.burst(enemy.x, enemy.y + enemy.height * 0.5, color,
                            14, 300, 0.55, 4)
 
+        boss = self.world.boss
+        if (boss is not None and boss.alive
+                and boss.last_attack != self.girl.attack_id
+                and overlaps(*hitbox, *boss.rect())):
+            if boss.hurt():
+                self.score += 100
+                self.shake = max(self.shake, 6.0)
+                self.burst(boss.x, boss.y + boss.height * 0.55,
+                           (255, 190, 110), 18, 340, 0.6, 5)
+            boss.last_attack = self.girl.attack_id
+            if boss.defeated:
+                self._boss_defeated()
+
+    def _boss_defeated(self):
+        """보스를 쓰러뜨리면 3스테이지는 즉시 클리어된다."""
+        if self.state != "play":
+            return
+        self.state = "clear"
+        self.clear_bonus = int(max(0, self.world.spec.time_bonus - self.play_time * 25))
+        self.score += self.clear_bonus + 500
+        self.best_score = max(self.best_score, self.score)
+        self.kill_count += 1
+        self.shake = 12.0
+        self.sfx.play("bear_deathsound.mp3")
+        self.burst(self.world.boss.x, self.world.boss.y + 140,
+                   (255, 200, 120), 50, 440, 1.0, 6, gravity=120)
+
     def _check_coins(self):
         for coin in self.world.coins:
             if coin.taken:
@@ -1218,6 +1292,9 @@ class Game:
     def _check_goal(self):
         if self.state != "play":
             return
+        # 보스 스테이지에서는 보스를 쓰러뜨려야 문이 열린다(쓰러뜨리면 즉시 클리어).
+        if self.world.boss is not None and not self.world.boss.defeated:
+            return
         if abs(self.girl.x - self.world.goal_x) < 46:
             self.state = "clear"
             self.clear_bonus = int(max(0, self.world.spec.time_bonus - self.play_time * 25))
@@ -1229,6 +1306,35 @@ class Game:
 
     def _check_enemy_contact(self):
         gx, gy, gw, gh = self.girl.rect()
+        boss = self.world.boss
+        if boss is not None and boss.alive:
+            bx, by, bw, bh = boss.rect()
+            if overlaps(gx, gy, gw, gh, bx, by, bw, bh):
+                stomp = (
+                    self.girl.vy < -80.0
+                    and self.girl.prev_y >= by + bh - 16
+                    and self.girl.y <= by + bh + 34
+                )
+                if self.girl.dash_timer > 0.0 or stomp:
+                    if boss.hurt():
+                        self.sfx.play("punch_sound.mp3", 0.4)
+                        self.shake = max(self.shake, 6.0)
+                        self.burst(boss.x, boss.y + boss.height * 0.55,
+                                   (255, 190, 110), 16, 320, 0.6, 5)
+                    if stomp:
+                        self.girl.bounce(700.0)
+                    if boss.defeated:
+                        self._boss_defeated()
+                else:
+                    boss.touch()
+                    if self.girl.take_hit(boss.x):
+                        self.sfx.play("female_deathsound.mp3")
+                        self.shake = max(self.shake, 11.0)
+                        self.burst(self.girl.x, self.girl.y + 100,
+                                   (255, 120, 140), 16, 320, 0.6, 4)
+                        if self.girl.hp <= 0:
+                            self.shake = 18.0
+                            self.best_score = max(self.best_score, self.score)
         for enemy in self.world.enemies:
             if not enemy.alive:
                 continue
@@ -1281,6 +1387,11 @@ class Game:
             # 사망 모션 중에는 낙하 판정을 하지 않는다.
             return
         if self.girl.y >= -80:
+            return
+        if self.dev_invincible:
+            # 무적 모드에서는 구멍에 떨어져도 죽지 않고 체크포인트로 돌아간다.
+            self.girl.respawn(*self.checkpoint)
+            self.shake = 10.0
             return
         self.sfx.play("falling_sound.mp3")
         self.sfx.play("female_deathsound.mp3")
@@ -1367,15 +1478,20 @@ class Game:
 
         self.world.draw_background(self.camera, self.time, self.shake_x)
 
-        if self.state == "title":
+        if self.state == "title" or (self.state == "dev_menu"
+                                     and self.dev_prev_state == "title"):
             self.lobby.draw(self, art())
+            if self.state == "dev_menu":
+                self._draw_dev_menu()
             return
 
         self._draw_world()
         self.world.draw_motes(self.motes)
         self._draw_hud()
 
-        if self.state == "paused":
+        if self.state == "dev_menu":
+            self._draw_dev_menu()
+        elif self.state == "paused":
             self._draw_pause()
         elif self.state == "skill_unlock":
             self._draw_skill_unlock()
@@ -1399,6 +1515,8 @@ class Game:
         for enemy in self.world.enemies:
             enemy.draw(cam, self.time, shake)
         self.bombs.draw(cam, shake)
+        if self.world.boss is not None:
+            self.world.boss.draw(art(), cam, shake)
 
         # 스킬 배경: 다른 레이어 위, 캐릭터 바로 아래
         self.skill_bg.draw(art(), WIDTH, HEIGHT)
@@ -1456,6 +1574,27 @@ class Game:
         a.blit(a.disc((150, 255, 235)), px, bar_y, 10, 10)
 
         self._draw_fps(WIDTH - 24, HEIGHT - 26, align="right")
+        if self.world.boss is not None:
+            self._draw_boss_hp()
+
+    def _draw_boss_hp(self):
+        """보스 스테이지에서는 화면 위쪽에 보스 체력을 표시한다."""
+        boss = self.world.boss
+        cx = WIDTH * 0.5
+        y = HEIGHT - 116
+        self.text.draw(20, cx, y + 22, "보스", (255, 210, 170), "center")
+        left, right = cx - 200, cx + 200
+        pico2d.draw_rectangle(left, y - 5, right, y + 5, 40, 24, 34, 220,
+                              filled=True)
+        pico2d.draw_rectangle(left, y - 5, right, y + 5,
+                              240, 180, 150, 180)
+        ratio = boss.hp / boss.max_hp
+        if ratio > 0.0:
+            pico2d.draw_rectangle(left, y - 4, left + 400 * ratio, y + 4,
+                                  255, 120, 90, 240, filled=True)
+        self.text.draw(16, cx, y - 28,
+                       "%d / %d" % (boss.hp, boss.max_hp),
+                       (240, 200, 190), "center", shadow=None)
 
     def _draw_fps(self, x, y, align="left"):
         if self.fps <= 0.0:
@@ -1483,6 +1622,39 @@ class Game:
                            color, "center")
         self.text.draw(16, cx, cy - 120, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
                        (120, 136, 172), "center", shadow=None)
+
+    def _draw_dev_menu(self):
+        """개발자 메뉴(F11): 무적 / 자유로운 스테이지 이동 / 스킬 쿨타임 0초."""
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 180,
+                              filled=True)
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        pico2d.draw_rectangle(cx - 310, cy - 150, cx + 310, cy + 150,
+                              18, 22, 44, 240, filled=True)
+        pico2d.draw_rectangle(cx - 310, cy - 150, cx + 310, cy + 150,
+                              120, 200, 240, 210)
+        self.text.draw(38, cx, cy + 106, "DEV MENU", (150, 230, 255),
+                       "center")
+        labels = {
+            "invincible": "무적",
+            "free_stage": "자유롭게 스테이지 이동",
+            "no_cooldown": "스킬 쿨타임 0초",
+        }
+        flags = {
+            "invincible": self.dev_invincible,
+            "free_stage": self.dev_free_stage,
+            "no_cooldown": self.dev_no_cooldown,
+        }
+        for i, item in enumerate(DEV_ITEMS):
+            selected = i == self.dev_index
+            color = (255, 236, 190) if selected else (150, 160, 190)
+            marker = "> " if selected else "  "
+            state = "ON" if flags[item] else "OFF"
+            self.text.draw(26, cx, cy + 42 - i * 52,
+                           "%s%s : %s" % (marker, labels[item], state),
+                           color, "center")
+        self.text.draw(16, cx, cy - 112,
+                       "↑/↓ 선택   ENTER 토글   ←/→ 스테이지 이동   F11 닫기",
+                       (130, 150, 190), "center", shadow=None)
 
     def _draw_skill_unlock(self):
         """대쉬 스킬 해금 안내 팝업. 스페이스바로 닫는다."""
@@ -1601,8 +1773,22 @@ def main():
             if ev.type == sdl2.SDL_QUIT:
                 running = False
             elif ev.type == sdl2.SDL_KEYDOWN:
-                if ev.key == sdl2.SDLK_F12:
+                if ev.key == sdl2.SDLK_F11:
+                    game.toggle_dev_menu()
+                elif ev.key == sdl2.SDLK_F12:
                     toggle_fullscreen()
+                elif game.state == "dev_menu":
+                    if ev.key in (sdl2.SDLK_ESCAPE, sdl2.SDLK_F11):
+                        game.toggle_dev_menu()
+                    elif ev.key in (sdl2.SDLK_UP, sdl2.SDLK_DOWN):
+                        step = -1 if ev.key == sdl2.SDLK_UP else 1
+                        game.dev_index = (game.dev_index + step) % len(DEV_ITEMS)
+                    elif ev.key in (sdl2.SDLK_RETURN, sdl2.SDLK_SPACE):
+                        game.toggle_dev_option()
+                    elif (game.dev_free_stage
+                          and ev.key in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT)):
+                        step = -1 if ev.key == sdl2.SDLK_LEFT else 1
+                        game.cycle_dev_stage(step)
                 elif game.state in ("clear", "gameover"):
                     # 스테이지 종료 화면에서는 R 키만 받는다.
                     if ev.key == sdl2.SDLK_r:
