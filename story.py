@@ -167,9 +167,64 @@ STAGE2_STORY = (
     _line("엘마", "좋아. 일단 이 임플란트라는 것부터 확인해 보자."),
 )
 
+# 스테이지 2 클리어 직후. 끝나면 WARNING → 보스 스테이지로 이어진다.
+STAGE2_END_STORY = (
+    _effect("fade_in"),
+
+    _line("엘마", "...중심지의 적들을 모두 제압했습니다."),
+    _line("국장", "수고했네, 엘마. 임플란트는 쓸 만하던가?"),
+    _line("엘마", "성능은 꽤 괜찮더군요. 덕분에 큰 도움이 됐습니다."),
+    _line("엘마", "그런데 한 가지 궁금한 게 있는데요."),
+    _line("국장", "뭔가?"),
+    _line("엘마", "'싼데 안 비슷한'이라는 이름은 대체 누가 지은 거죠?"),
+
+    _effect("silence"),
+
+    _line("국장", "...엔지니어 놈들의 유머 감각이야 뭐, 늘 그렇지."),
+    _line("엘마", "그걸 유머라고 받아들여야 하는 건가요..."),
+    _line("국장", "아무튼, 잡담은 여기까지 하도록 하지."),
+    _line("국장", "자네가 있는 곳에서 멀지 않은 지역에 루나폴의 보스가 있다는 정보가 들어왔네."),
+    _line("엘마", "블랙 말인가요?"),
+    _line("엘마", "뭐, 그 녀석이라면 별로 걱정할 것도 없겠네요. 저번에도 별 볼 일 없었잖아요."),
+    _line("국장", "이번에는 이야기가 다르네."),
+    _line("엘마", "...네?"),
+    _line("국장", "지난번 탈옥 사건 이후로 상당히 강해졌다는 정보가 들어왔어."),
+    _line("엘마", "...얼마나 강해졌는데요?"),
+    _line("국장", "글쎄... 강해졌다고 해 봤자 평소 전투력의 11배에서 12배 정도라더군."),
+
+    _effect("silence"),
+
+    _line("엘마", "..."),
+    _line("엘마", "지금 장난하세요?"),
+    _line("국장", "내가 지금 장난이나 칠 상황으로 보이나?"),
+    _line("엘마", "하아..."),
+    _line("엘마", "알겠습니다. 일단 확인해 보도록 하죠."),
+    _line("엘마", "뭐, 이쯤 되면 죽어서 쉬는 것도 나쁘지 않겠네요."),
+    _line("국장", "아니, 죽지 말고 무사히 돌아와 줬으면 하네만..."),
+    _line("엘마", "그렇게 걱정되시면 지원 병력이라도 보내주시죠."),
+
+    _effect("silence"),
+
+    _line("엘마", "..."),
+    _line("엘마", "국장님?"),
+
+    _effect("comm_end"),
+
+    _line("엘마", "..."),
+    _line("엘마", "설마 또 멋대로 끊은 거야?"),
+    _line("엘마", "진짜... 돌아가기만 해 봐."),
+    _line("엘마", "그때는 정말 가만 안 둘 테니까..."),
+
+    _effect("weapon"),
+
+    _line("엘마", "...좋아."),
+    _line("엘마", "어디 얼마나 강해졌는지 직접 확인해 보자."),
+)
+
 STORY_BY_STAGE = {
     1: STAGE1_STORY,
     2: STAGE2_STORY,
+    "2_end": STAGE2_END_STORY,
 }
 
 # 대사 종료 후 화면 중앙에 띄우는 두 줄(큰 제목, 작은 부제).
@@ -179,9 +234,9 @@ TITLE_BY_STAGE = {
 }
 
 
-def story_steps(stage):
-    """해당 스테이지의 시나리오 단계를 돌려준다. 없으면 빈 튜플."""
-    return STORY_BY_STAGE.get(stage, ())
+def story_steps(key):
+    """스테이지 번호 또는 '2_end' 같은 키로 시나리오 단계를 돌려준다."""
+    return STORY_BY_STAGE.get(key, ())
 
 
 def stage_title(stage):
@@ -195,14 +250,17 @@ class StoryPlayer:
     def __init__(self, width, height, stage=1):
         self.width = width
         self.height = height
-        self.stage = stage
+        self.key = stage
+        self.stage = stage if isinstance(stage, int) else 2
         self.steps = story_steps(stage)
         self.reset()
 
-    def reset(self, stage=None):
-        if stage is not None:
-            self.stage = stage
-            self.steps = story_steps(stage)
+    def reset(self, key=None):
+        if key is not None:
+            self.key = key
+            self.steps = story_steps(key)
+            if isinstance(key, int):
+                self.stage = key
         self.index = 0
         self.elapsed = 0.0
         self.finished = False

@@ -63,6 +63,8 @@ STAGE_TITLE_FADE_IN = 0.35
 STAGE_TITLE_HOLD = 1.60
 STAGE_TITLE_LARGE_SIZE = 64
 STAGE_TITLE_SMALL_SIZE = 26
+WARNING_TEXT = "WARNING"
+WARNING_SIZE = 96
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -951,6 +953,7 @@ class Game:
 
         self.state = "title"
         self.pending_skill_unlock = False
+        self.intro_mode = "title"
         self.intro_time = 0.0
         self.time = 0.0
         self.play_time = 0.0
@@ -1028,6 +1031,7 @@ class Game:
                 self.pending_skill_unlock = False
         self.play_time = 0.0
         self.intro_time = 0.0
+        self.intro_mode = "title"
         self.camera = 0.0
         self.shake = 0.0
         self.score = 0
@@ -1064,7 +1068,7 @@ class Game:
             self.girl.clear_keys()
 
     # ------------------------------------------------------------------
-    # 스테이지 오프닝 시나리오
+    # 스테이지 오프닝/엔딩 시나리오
     # ------------------------------------------------------------------
     def advance_story(self):
         """다음 대사(또는 빈 연출 턴)로 넘어간다."""
@@ -1085,12 +1089,24 @@ class Game:
         else:
             self.advance_story()
 
-    def begin_stage_intro(self):
-        """마지막 대사/연출이 끝나면 UI 페이드아웃 → STAGE 1 타이틀로 간다."""
+    def begin_ending_story(self):
+        """스테이지 2 클리어 직후 엔딩 대사를 시작한다."""
+        if self.state != "play":
+            return
+        first = self.story.reset("2_end")
+        self.state = "cutscene"
+        self._apply_story_effect(first)
+        self.girl.clear_keys()
+
+    def begin_stage_intro(self, mode=None):
+        """마지막 대사 후 UI 페이드아웃 → 제목 또는 WARNING 연출로 간다."""
         if self.state != "cutscene":
             return
         self.story.finished = True
         self.state = "stage_intro"
+        if mode is None:
+            mode = "warning" if self.story.key == "2_end" else "title"
+        self.intro_mode = mode
         self.intro_time = 0.0
         self.girl.clear_keys()
         pico2d.hide_cursor()
@@ -1099,6 +1115,10 @@ class Game:
         """ESC 건너뛰기 또는 타이틀 연출 종료 후 전투로 들어간다."""
         if self.state not in ("cutscene", "stage_intro"):
             return
+        if self.state == "cutscene" and self.story.key == "2_end":
+            # 엔딩 대사를 건너뛰어도 WARNING → 보스 스테이지 흐름은 유지한다.
+            self.begin_stage_intro(mode="warning")
+            return
         self.story.finished = True
         self.state = "play"
         if self.pending_skill_unlock:
@@ -1106,6 +1126,18 @@ class Game:
             self.pending_skill_unlock = False
         self.girl.clear_keys()
         pico2d.hide_cursor()
+
+    def enter_boss_stage(self):
+        """WARNING 연출이 끝나면 보스가 있는 스테이지 3으로 진입한다."""
+        self.stage = 3
+        self.start(skip_story=True)
+        self.state = "play"
+        self.shake = 18.0
+        self.sfx.play("bomb_sound.mp3")
+        boss = self.world.boss
+        if boss is not None:
+            self.burst(boss.x, boss.y + boss.height * 0.5,
+                       (255, 90, 80), 42, 460, 1.0, 7, gravity=120)
 
     def _apply_story_effect(self, step):
         """새 단계에 진입할 때 한 번만 실행되는 연출/효과음."""
@@ -1156,10 +1188,10 @@ class Game:
                 self.girl.dash_cooldown = 0.0
 
     def cycle_dev_stage(self, direction):
-        """개발자 메뉴에서 스테이지를 자유롭게 바꾼다(1→2→3→1)."""
+        """개발자 메뉴에서 스테이지를 바꾸고 해당 스테이지 시나리오부터 시작한다."""
         self.stage = (self.stage - 1 + direction) % len(STAGES) + 1
         self.dev_prev_state = None
-        self.start(skip_story=True)
+        self.start()
 
     def toggle_pause(self):
         if self.state == "play":
@@ -1259,7 +1291,10 @@ class Game:
             self.story_input()
             return True
         if self.state == "stage_intro":
-            self.finish_cutscene()
+            if self.intro_mode == "warning":
+                self.enter_boss_stage()
+            else:
+                self.finish_cutscene()
             return True
         if self.state == "paused":
             idx = hit_index(self.pause_item_rects(), x, y)
@@ -1358,7 +1393,10 @@ class Game:
         self._update_effects(dt)
         total = STORY_UI_FADE_TIME + STAGE_TITLE_FADE_IN + STAGE_TITLE_HOLD
         if self.intro_time >= total:
-            self.finish_cutscene()
+            if self.intro_mode == "warning":
+                self.enter_boss_stage()
+            else:
+                self.finish_cutscene()
 
     def _update_motes(self, dt):
         for mote in self.motes:
@@ -1413,6 +1451,9 @@ class Game:
         self._check_hearts()
         self._check_checkpoints()
         self._check_goal()
+        if self.state != "play":
+            self._update_effects(dt)
+            return
         self._check_enemy_contact()
         self._check_fall()
 
@@ -1582,13 +1623,16 @@ class Game:
         if self.world.boss is not None and not self.world.boss.defeated:
             return
         if abs(self.girl.x - self.world.goal_x) < 46:
-            self.state = "clear"
             self.clear_bonus = int(max(0, self.world.spec.time_bonus - self.play_time * 25))
             self.score += self.clear_bonus
             self.best_score = max(self.best_score, self.score)
             self.shake = 8.0
             self.burst(self.world.goal_x, GROUND + 100,
                        (140, 255, 240), 40, 420, 0.9, 5, gravity=120)
+            if self.stage == 2:
+                self.begin_ending_story()
+            else:
+                self.state = "clear"
 
     def _check_enemy_contact(self):
         gx, gy, gw, gh = self.girl.rect()
@@ -1901,19 +1945,26 @@ class Game:
                 a.blit(portrait, WIDTH * 0.5 + self.shake_x, HEIGHT * 0.5,
                        WIDTH, HEIGHT, ui_alpha)
 
-        # UI 가 완전히 사라진 뒤 중앙에 두 줄을 띄운다.
+        # UI 가 완전히 사라진 뒤 중앙에 제목(또는 WARNING)을 띄운다.
         title_alpha = self._stage_title_alpha()
         if title_alpha > 0.0:
             cx, cy = WIDTH // 2, HEIGHT // 2
-            big = tuple(int(c * title_alpha) for c in (255, 222, 150))
-            small = tuple(int(c * title_alpha) for c in (232, 238, 250))
-            title, subtitle = story.stage_title(self.stage)
-            if title:
-                self.text.draw(STAGE_TITLE_LARGE_SIZE, cx, cy + 34, title,
-                               big, "center", shadow=None)
-            if subtitle:
-                self.text.draw(STAGE_TITLE_SMALL_SIZE, cx, cy - 42, subtitle,
-                               small, "center", shadow=None)
+            if self.intro_mode == "warning":
+                pulse = 0.66 + 0.34 * abs(math.sin(self.intro_time * 9.0))
+                alert = tuple(int(c * title_alpha * pulse)
+                              for c in (255, 74, 74))
+                self.text.draw(WARNING_SIZE, cx, cy, WARNING_TEXT,
+                               alert, "center", shadow=None)
+            else:
+                big = tuple(int(c * title_alpha) for c in (255, 222, 150))
+                small = tuple(int(c * title_alpha) for c in (232, 238, 250))
+                title, subtitle = story.stage_title(self.stage)
+                if title:
+                    self.text.draw(STAGE_TITLE_LARGE_SIZE, cx, cy + 34, title,
+                                   big, "center", shadow=None)
+                if subtitle:
+                    self.text.draw(STAGE_TITLE_SMALL_SIZE, cx, cy - 42, subtitle,
+                                   small, "center", shadow=None)
 
     def _draw_world(self):
         cam = self.camera
@@ -2282,7 +2333,10 @@ def main():
                 elif game.state == "stage_intro":
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
                                   sdl2.SDLK_ESCAPE):
-                        game.finish_cutscene()
+                        if game.intro_mode == "warning":
+                            game.enter_boss_stage()
+                        else:
+                            game.finish_cutscene()
                 elif game.state in ("clear", "gameover"):
                     # 스테이지 종료 화면에서는 R 키만 받는다.
                     if ev.key == sdl2.SDLK_r:
