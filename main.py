@@ -29,6 +29,7 @@ from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from lobby import Lobby
 from bomb import BombField
+import audio
 from audio import Bgm, Sfx
 from ui import HUDOverlay, kill_icon, skill_icon_center
 from punch import DURATION as PUNCH_DURATION
@@ -45,8 +46,10 @@ FLOAT_DROP = 60
 # 캐릭터와 땅 위의 적이 서는 높이. 도로 그림은 GROUND 에 그대로 둔다.
 STAND_Y = GROUND - FLOAT_DROP
 FPS = 60
-PAUSE_ITEMS = ("resume", "quit")
+PAUSE_ITEMS = ("resume", "options", "quit")
+OPTION_ITEMS = ("bgm", "sfx", "mute", "back")
 DEV_ITEMS = ("invincible", "free_stage", "no_cooldown")
+VOLUME_STEP = max(1, audio.MAX_VOLUME // 20)  # 슬라이드 한 칸 = 5%
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -937,6 +940,7 @@ class Game:
         self.fps = 0.0
         self.renderer_name = ""
         self.menu_index = 0
+        self.options_index = 0
         # 개발자 메뉴(F11) 설정. 스테이지를 바꿔도 유지된다.
         self.dev_index = 0
         self.dev_prev_state = None
@@ -1050,6 +1054,29 @@ class Game:
             self.state = "play"
             self.bgm.resume()
 
+    def open_options(self):
+        """일시정지 메뉴의 옵션 화면으로 들어간다."""
+        if self.state == "paused":
+            self.state = "options"
+            self.options_index = 0
+
+    def close_options(self):
+        """옵션 화면을 닫고 일시정지 메뉴로 돌아간다."""
+        if self.state == "options":
+            self.state = "paused"
+
+    def adjust_option_volume(self, direction):
+        """선택한 음량 슬라이드를 한 칸 움직인다."""
+        if self.options_index == 0:
+            audio.change_bgm_volume(VOLUME_STEP * direction)
+        elif self.options_index == 1:
+            audio.change_sfx_volume(VOLUME_STEP * direction)
+            audio.apply_sfx_volumes()
+
+    def toggle_option_mute(self):
+        """전체 음소거를 켜거나 끈다."""
+        audio.toggle_muted()
+
     # ------------------------------------------------------------------
     def update(self, dt):
         dt = min(dt, 0.05)
@@ -1062,7 +1089,7 @@ class Game:
                 self.start()
             return
 
-        if self.state == "paused":
+        if self.state in ("paused", "options"):
             return
 
         # 해금 안내 팝업/개발자 메뉴가 떠 있는 동안에는 게임이 진행되지 않는다.
@@ -1491,6 +1518,8 @@ class Game:
 
         if self.state == "dev_menu":
             self._draw_dev_menu()
+        elif self.state == "options":
+            self._draw_options()
         elif self.state == "paused":
             self._draw_pause()
         elif self.state == "skill_unlock":
@@ -1608,19 +1637,75 @@ class Game:
         pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 150,
                               filled=True)
         cx, cy = WIDTH // 2, HEIGHT // 2
-        pico2d.draw_rectangle(cx - 210, cy - 150, cx + 210, cy + 150,
+        pico2d.draw_rectangle(cx - 210, cy - 170, cx + 210, cy + 170,
                               20, 26, 52, 235, filled=True)
-        pico2d.draw_rectangle(cx - 210, cy - 150, cx + 210, cy + 150,
+        pico2d.draw_rectangle(cx - 210, cy - 170, cx + 210, cy + 170,
                               120, 220, 210, 200)
-        self.text.draw(44, cx, cy + 82, "PAUSED", (235, 240, 255), "center")
-        labels = {"resume": "계속하기", "quit": "게임 종료"}
+        self.text.draw(44, cx, cy + 110, "PAUSED", (235, 240, 255), "center")
+        labels = {"resume": "계속하기", "options": "옵션", "quit": "게임 종료"}
         for i, item in enumerate(PAUSE_ITEMS):
             selected = i == self.menu_index
             color = (255, 236, 190) if selected else (150, 160, 190)
             prefix = "> " if selected else "  "
-            self.text.draw(28, cx, cy + 10 - i * 56, prefix + labels[item],
+            self.text.draw(28, cx, cy + 30 - i * 56, prefix + labels[item],
                            color, "center")
-        self.text.draw(16, cx, cy - 120, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
+        self.text.draw(16, cx, cy - 145, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
+                       (120, 136, 172), "center", shadow=None)
+
+    def _draw_options(self):
+        """일시정지 메뉴의 옵션: 음량 슬라이드와 전체 음소거."""
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 8, 10, 24, 180,
+                              filled=True)
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        pico2d.draw_rectangle(cx - 350, cy - 195, cx + 350, cy + 195,
+                              18, 22, 44, 240, filled=True)
+        pico2d.draw_rectangle(cx - 350, cy - 195, cx + 350, cy + 195,
+                              120, 200, 240, 210)
+        self.text.draw(40, cx, cy + 145, "옵션", (150, 230, 255), "center")
+
+        bar_left, bar_right = cx - 80, cx + 190
+        bar_width = bar_right - bar_left
+        rows = (("bgm", "배경음악", cy + 55),
+                ("sfx", "효과음", cy - 5))
+        for i, (item, label, y) in enumerate(rows):
+            selected = i == self.options_index
+            color = (255, 236, 190) if selected else (150, 160, 190)
+            marker = "> " if selected else "  "
+            self.text.draw(24, cx - 300, y - 8, marker + label, color, "left")
+            pico2d.draw_rectangle(bar_left, y - 8, bar_right, y + 8,
+                                  30, 36, 58, 230, filled=True)
+            value = (audio.bgm_percent() if item == "bgm"
+                     else audio.sfx_percent())
+            knob = bar_left + int(bar_width * value / 100.0)
+            if knob > bar_left:
+                fill_color = ((90, 100, 120, 220) if audio.is_muted()
+                              else (90, 200, 240, 240))
+                pico2d.draw_rectangle(bar_left, y - 6, knob, y + 6,
+                                      *fill_color, filled=True)
+            pico2d.draw_rectangle(bar_left, y - 8, bar_right, y + 8,
+                                  120, 160, 210, 180)
+            pico2d.draw_rectangle(knob - 4, y - 13, knob + 4, y + 13,
+                                  235, 245, 255, 255, filled=True)
+            self.text.draw(20, cx + 215, y - 8, "%d%%" % value,
+                           (210, 225, 245), "left", shadow=None)
+
+        y = cy - 65
+        selected = self.options_index == 2
+        color = (255, 236, 190) if selected else (150, 160, 190)
+        marker = "> " if selected else "  "
+        state = "ON" if audio.is_muted() else "OFF"
+        state_color = (255, 130, 140) if audio.is_muted() else (140, 230, 190)
+        self.text.draw(24, cx - 300, y - 8, marker + "전체 음소거", color,
+                       "left")
+        self.text.draw(24, cx - 80, y - 8, state, state_color, "left")
+
+        y = cy - 125
+        selected = self.options_index == 3
+        color = (255, 236, 190) if selected else (150, 160, 190)
+        marker = "> " if selected else "  "
+        self.text.draw(24, cx - 300, y - 8, marker + "뒤로", color, "left")
+        self.text.draw(16, cx, cy - 170,
+                       "↑/↓ 선택   ←/→ 음량 조절   ENTER 토글   ESC 뒤로",
                        (120, 136, 172), "center", shadow=None)
 
     def _draw_dev_menu(self):
@@ -1796,6 +1881,24 @@ def main():
                             game.next_stage()
                         else:
                             game.start()
+                elif game.state == "options":
+                    if ev.key in (sdl2.SDLK_ESCAPE, sdl2.SDLK_p):
+                        game.close_options()
+                    elif ev.key == sdl2.SDLK_UP:
+                        game.options_index = ((game.options_index - 1)
+                                              % len(OPTION_ITEMS))
+                    elif ev.key == sdl2.SDLK_DOWN:
+                        game.options_index = ((game.options_index + 1)
+                                              % len(OPTION_ITEMS))
+                    elif (ev.key in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT)
+                          and game.options_index in (0, 1)):
+                        step = -1 if ev.key == sdl2.SDLK_LEFT else 1
+                        game.adjust_option_volume(step)
+                    elif ev.key in (sdl2.SDLK_RETURN, sdl2.SDLK_SPACE):
+                        if game.options_index == 2:
+                            game.toggle_option_mute()
+                        elif game.options_index == 3:
+                            game.close_options()
                 elif game.state == "paused":
                     if ev.key in (sdl2.SDLK_ESCAPE, sdl2.SDLK_p):
                         game.toggle_pause()
@@ -1804,8 +1907,11 @@ def main():
                     elif ev.key == sdl2.SDLK_DOWN:
                         game.menu_index = (game.menu_index + 1) % len(PAUSE_ITEMS)
                     elif ev.key in (sdl2.SDLK_RETURN, sdl2.SDLK_SPACE):
-                        if PAUSE_ITEMS[game.menu_index] == "resume":
+                        choice = PAUSE_ITEMS[game.menu_index]
+                        if choice == "resume":
                             game.toggle_pause()
+                        elif choice == "options":
+                            game.open_options()
                         else:
                             running = False
                 elif game.state == "skill_unlock":
