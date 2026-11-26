@@ -37,6 +37,7 @@ from punch import PunchImpact, draw_punch
 from bench import Bench
 from box import Box
 from road import Road
+import story
 
 WIDTH, HEIGHT = 1280, 720
 GROUND = 140
@@ -50,6 +51,12 @@ PAUSE_ITEMS = ("resume", "options", "quit")
 OPTION_ITEMS = ("bgm", "sfx", "mute", "back")
 DEV_ITEMS = ("invincible", "free_stage", "no_cooldown")
 VOLUME_STEP = max(1, audio.MAX_VOLUME // 20)  # 슬라이드 한 칸 = 5%
+# 예시 PNG에서 측정한 대사 위치(1920x1080 → 1280x720).
+STORY_TEXT_X = 373
+STORY_TEXT_Y = 130
+STORY_TEXT_SIZE = 32
+STORY_LINE_GAP = 38
+STORY_TEXT_WIDTH = 820
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 벤치와 상자의 개수, 그리고 가구 사이 최소 간격(px)과 배치 가능한 x 범위
@@ -917,6 +924,9 @@ def hud_heart_image(filled):
 
 
 class Game:
+    # 테스트나 개발자 도구에서 오프닝을 건너뛰려면 True 로 바꾼다.
+    skip_story = False
+
     def __init__(self):
         self.text = TextRenderer()
         self.stage = 1
@@ -930,6 +940,8 @@ class Game:
         self.lobby = Lobby(WIDTH, HEIGHT, GROUND, STAND_Y)
         self.bgm = Bgm()
         self.sfx = Sfx()
+        self.story = story.StoryPlayer(WIDTH, HEIGHT)
+        self.story_images = {}
 
         self.state = "title"
         self.time = 0.0
@@ -979,7 +991,7 @@ class Game:
         self.smoke_log = []
 
     # ------------------------------------------------------------------
-    def start(self):
+    def start(self, skip_story=False):
         self.world = World(STAGES[self.stage])
         self.bgm.play(self.world.spec.bgm)
         self.girl = Girl(160, STAND_Y)
@@ -991,7 +1003,14 @@ class Game:
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
-        self.state = "play"
+        # 스테이지 1은 전투 전에 시나리오를 보여준다. smoke/개발자 이동은 생략.
+        if (self.stage == 1 and not skip_story and not self.smoke
+                and not self.skip_story):
+            first = self.story.reset()
+            self.state = "cutscene"
+            self._apply_story_effect(first)
+        else:
+            self.state = "play"
         self.play_time = 0.0
         self.camera = 0.0
         self.shake = 0.0
@@ -1029,15 +1048,61 @@ class Game:
             self.state = "play"
             self.girl.clear_keys()
 
+    # ------------------------------------------------------------------
+    # 스테이지 1 오프닝 시나리오
+    # ------------------------------------------------------------------
+    def advance_story(self):
+        """Space/Enter/클릭으로 다음 대사(또는 연출)로 넘어간다."""
+        if self.state != "cutscene":
+            return
+        step = self.story.advance()
+        if self.story.finished:
+            self.finish_cutscene()
+        elif step is not None:
+            self._apply_story_effect(step)
+
+    def finish_cutscene(self):
+        """ESC 또는 마지막 연출 후 전투로 들어간다."""
+        if self.state != "cutscene":
+            return
+        self.story.finished = True
+        self.state = "play"
+        self.girl.clear_keys()
+        pico2d.hide_cursor()
+
+    def _apply_story_effect(self, step):
+        """새 단계에 진입할 때 한 번만 실행되는 연출/효과음."""
+        if step is None:
+            return
+        effect = step.get("effect")
+        if effect == "quake":
+            self.shake = max(self.shake, 20.0)
+        elif effect == "explosion":
+            self.sfx.play("bomb_sound.mp3")
+            self.shake = max(self.shake, 16.0)
+            self.burst(WIDTH * 0.5, HEIGHT * 0.58, (255, 170, 90),
+                       36, 420, 1.0, 7)
+        elif effect == "comm_beep":
+            self.sfx.play("checkpoint_sound.mp3", volume=0.8)
+        elif effect == "comm_end":
+            self.sfx.play("checkpoint_sound.mp3", volume=0.5)
+        elif effect == "weapon":
+            self.sfx.play("skill_sound.mp3", volume=0.7)
+
     def toggle_dev_menu(self):
         """F11: 어느 화면에서든 개발자 메뉴를 열고 닫는다."""
         if self.state == "dev_menu":
             self.state = self.dev_prev_state or "play"
+            if self.state in ("paused", "options"):
+                pico2d.show_cursor()
+            else:
+                pico2d.hide_cursor()
             return
         self.dev_prev_state = self.state
         self.dev_index = 0
         self.girl.clear_keys()
         self.state = "dev_menu"
+        pico2d.show_cursor()
 
     def toggle_dev_option(self):
         """개발자 메뉴에서 선택한 항목을 켜거나 끈다."""
@@ -1057,7 +1122,7 @@ class Game:
         """개발자 메뉴에서 스테이지를 자유롭게 바꾼다(1→2→3→1)."""
         self.stage = (self.stage - 1 + direction) % len(STAGES) + 1
         self.dev_prev_state = None
-        self.start()
+        self.start(skip_story=True)
 
     def toggle_pause(self):
         if self.state == "play":
@@ -1153,6 +1218,9 @@ class Game:
     def handle_mouse_click(self, ev):
         """메뉴 항목을 클릭한다. False 를 돌려주면 게임 종료 요청."""
         x, y = self._mouse_pos(ev)
+        if self.state == "cutscene":
+            self.advance_story()
+            return True
         if self.state == "paused":
             idx = hit_index(self.pause_item_rects(), x, y)
             if idx is None:
@@ -1227,10 +1295,21 @@ class Game:
         if self.state in ("skill_unlock", "dev_menu"):
             return
 
-        if self.state == "play":
+        if self.state == "cutscene":
+            self._update_cutscene(dt)
+        elif self.state == "play":
             self._update_play(dt)
         else:
             self._update_effects(dt)
+
+    def _update_cutscene(self, dt):
+        step = self.story.update(dt)
+        if step is not None:
+            self._apply_story_effect(step)
+        if self.story.finished:
+            self.finish_cutscene()
+            return
+        self._update_effects(dt)
 
     def _update_motes(self, dt):
         for mote in self.motes:
@@ -1634,6 +1713,14 @@ class Game:
     def draw(self):
         self.shake_x = random.uniform(-self.shake, self.shake) * 0.6
 
+        if (self.state == "cutscene"
+                or (self.state == "dev_menu"
+                    and self.dev_prev_state == "cutscene")):
+            self._draw_cutscene()
+            if self.state == "dev_menu":
+                self._draw_dev_menu()
+            return
+
         self.world.draw_background(self.camera, self.time, self.shake_x)
 
         if self.state == "title" or (self.state == "dev_menu"
@@ -1659,6 +1746,75 @@ class Game:
             self._draw_clear()
         elif self.state == "gameover":
             self._draw_gameover()
+
+    def _story_portrait(self, speaker):
+        path = story.portrait_path(speaker)
+        if not path:
+            return None
+        image = self.story_images.get(path)
+        if image is None:
+            image = pico2d.load_image(os.path.join(BASE_DIR, path))
+            self.story_images[path] = image
+        return image
+
+    def _wrap_story_text(self, text, size=26, max_width=None):
+        """긴 한국어 대사를 화면 폭에 맞춰 줄바꿈한다."""
+        if max_width is None:
+            max_width = WIDTH - 240
+        lines = []
+        current = ""
+        for ch in text:
+            candidate = current + ch
+            if current and self.text.measure(size, candidate) > max_width:
+                lines.append(current.rstrip())
+                current = ch.lstrip()
+            else:
+                current = candidate
+        if current.strip():
+            lines.append(current.rstrip())
+        return lines or [""]
+
+    def _draw_cutscene(self):
+        a = art()
+        s = self.story
+        step = s.current()
+        ox = self.shake_x + s.portrait_sway()
+
+        # 배경은 그대로 게임플레이 화면을 어둡게 보여준다.
+        self.world.draw_background(self.camera, self.time, self.shake_x)
+        self._draw_world()
+        self.world.draw_motes(self.motes)
+        pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 0, 0, 0, 118, filled=True)
+
+        # 연기/폭발 파티클은 UI 아래에 깔아야 한다.
+        if s.smoke_scene:
+            smoke = a.disc((150, 152, 160), glow=True)
+            for px, py, radius, alpha, _ in s.smoke_puffs:
+                a.blit(smoke, px + ox * 0.4, py, radius * 2, radius * 2,
+                       int(alpha * 255 * 0.55))
+
+        # PNG 안에 이미 이름/네모박스가 들어 있으므로 초상화만 얹는다.
+        portrait = self._story_portrait(s.speaker)
+        if portrait is not None:
+            a.blit(portrait, WIDTH * 0.5 + ox, HEIGHT * 0.5, WIDTH, HEIGHT)
+
+        # 예시 이미지에서 측정한 위치에 대사만 출력한다.
+        if step is not None and step["kind"] == "line" and s.text:
+            y = STORY_TEXT_Y
+            for line in self._wrap_story_text(
+                    s.text, STORY_TEXT_SIZE, STORY_TEXT_WIDTH)[:2]:
+                self.text.draw(STORY_TEXT_SIZE, STORY_TEXT_X, y, line,
+                               (244, 240, 232), shadow=(6, 6, 16))
+                y -= STORY_LINE_GAP
+
+        if s.flash > 0.0:
+            pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT,
+                                  255, 210, 150, int(190 * s.flash),
+                                  filled=True)
+        fade = s.fade_alpha()
+        if fade > 0:
+            pico2d.draw_rectangle(0, 0, WIDTH, HEIGHT, 0, 0, 0, fade,
+                                  filled=True)
 
     def _draw_world(self):
         cam = self.camera
@@ -2018,6 +2174,12 @@ def main():
                           and ev.key in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT)):
                         step = -1 if ev.key == sdl2.SDLK_LEFT else 1
                         game.cycle_dev_stage(step)
+                elif game.state == "cutscene":
+                    # 시나리오는 Space/Enter/클릭으로 넘기고 ESC로 건너뛴다.
+                    if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN):
+                        game.advance_story()
+                    elif ev.key == sdl2.SDLK_ESCAPE:
+                        game.finish_cutscene()
                 elif game.state in ("clear", "gameover"):
                     # 스테이지 종료 화면에서는 R 키만 받는다.
                     if ev.key == sdl2.SDLK_r:
