@@ -13,6 +13,8 @@ PORTRAITS = {
     "국장": "sprites/UI/scenario/SN_HeadUI.png",
 }
 
+REVEAL_SPEED = 26.0  # 글자/초. 타이핑 효과 속도
+
 EFFECT_DURATIONS = {
     "fade_in": 1.30,
     "quake": 1.10,
@@ -112,7 +114,7 @@ STAGE1_STORY = (
 
 
 class StoryPlayer:
-    """시나리오를 시간에 따라 자동 재생하고, 입력을 건너뛸 수 있게 한다."""
+    """대사를 한 글자씩 보여주고, 입력으로만 다음 턴으로 넘어간다."""
 
     def __init__(self, width, height):
         self.width = width
@@ -126,6 +128,7 @@ class StoryPlayer:
         self.finished = False
         self.smoke_scene = False
         self.flash = 0.0
+        self.revealed = 0.0  # 현재 대사에서 표시된 글자 수
         self.last_speaker = "엘마"  # 빈 연출 턴에도 마지막 초상화를 유지
         rng = random.Random(11)
         self.smoke_puffs = [
@@ -152,6 +155,19 @@ class StoryPlayer:
     def text(self):
         step = self.current()
         return plain_text(step["text"]) if step else ""
+
+    @property
+    def visible_text(self):
+        """지금까지 타이핑으로 드러난 부분만 돌려준다."""
+        return self.text[:int(self.revealed)]
+
+    @property
+    def is_revealing(self):
+        return int(self.revealed) < len(self.text)
+
+    def reveal_all(self):
+        """스페이스 입력으로 현재 대사를 한 번에 모두 표시한다."""
+        self.revealed = float(len(self.text))
 
     def duration(self, step=None):
         step = step if step is not None else self.current()
@@ -190,6 +206,7 @@ class StoryPlayer:
     def _on_enter(self, step):
         if step is None:
             return None
+        self.revealed = 0.0
         if step["kind"] == "line":
             self.last_speaker = step["speaker"]
         effect = step.get("effect")
@@ -213,15 +230,18 @@ class StoryPlayer:
         return self._on_enter(self.current())
 
     def update(self, dt):
-        """시간을 흘려보낸다. 새 단계로 넘어가면 그 단계를 돌려준다."""
+        """글자/연출 타이밍만 흘려보낸다. 턴은 입력으로만 넘어간다."""
         if self.finished:
-            return None
+            return
         step = self.current()
         if step is None:
             self.finished = True
-            return None
+            return
 
         self.elapsed += dt
+        if step["kind"] == "line" and self.is_revealing:
+            self.revealed = min(float(len(self.text)),
+                                self.revealed + dt * REVEAL_SPEED)
         if self.flash > 0.0:
             self.flash = max(0.0, self.flash - dt * 2.2)
         if self.smoke_scene:
@@ -231,7 +251,3 @@ class StoryPlayer:
                 if puff[1] > self.height + 80:
                     puff[1] = -80
                     puff[0] = random.uniform(0, self.width)
-
-        if self.elapsed >= self.duration(step):
-            return self.advance()
-        return None

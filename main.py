@@ -54,8 +54,8 @@ VOLUME_STEP = max(1, audio.MAX_VOLUME // 20)  # 슬라이드 한 칸 = 5%
 # 예시 PNG에서 측정한 대사 위치(1920x1080 → 1280x720).
 STORY_TEXT_X = 373
 STORY_TEXT_Y = 130
-STORY_TEXT_SIZE = 32
-STORY_LINE_GAP = 38
+STORY_TEXT_SIZE = 26
+STORY_LINE_GAP = 30
 STORY_TEXT_WIDTH = 820
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1052,7 +1052,7 @@ class Game:
     # 스테이지 1 오프닝 시나리오
     # ------------------------------------------------------------------
     def advance_story(self):
-        """Space/Enter/클릭으로 다음 대사(또는 연출)로 넘어간다."""
+        """다음 대사(또는 빈 연출 턴)로 넘어간다."""
         if self.state != "cutscene":
             return
         step = self.story.advance()
@@ -1060,6 +1060,15 @@ class Game:
             self.finish_cutscene()
         elif step is not None:
             self._apply_story_effect(step)
+
+    def story_input(self):
+        """스페이스/엔터/클릭: 타이핑 중이면 전체 표시, 끝났으면 다음 턴."""
+        if self.state != "cutscene":
+            return
+        if self.story.is_revealing:
+            self.story.reveal_all()
+        else:
+            self.advance_story()
 
     def finish_cutscene(self):
         """ESC 또는 마지막 연출 후 전투로 들어간다."""
@@ -1219,7 +1228,7 @@ class Game:
         """메뉴 항목을 클릭한다. False 를 돌려주면 게임 종료 요청."""
         x, y = self._mouse_pos(ev)
         if self.state == "cutscene":
-            self.advance_story()
+            self.story_input()
             return True
         if self.state == "paused":
             idx = hit_index(self.pause_item_rects(), x, y)
@@ -1303,12 +1312,7 @@ class Game:
             self._update_effects(dt)
 
     def _update_cutscene(self, dt):
-        step = self.story.update(dt)
-        if step is not None:
-            self._apply_story_effect(step)
-        if self.story.finished:
-            self.finish_cutscene()
-            return
+        self.story.update(dt)
         self._update_effects(dt)
 
     def _update_motes(self, dt):
@@ -1799,10 +1803,10 @@ class Game:
             a.blit(portrait, WIDTH * 0.5 + ox, HEIGHT * 0.5, WIDTH, HEIGHT)
 
         # 예시 이미지에서 측정한 위치에 대사만 출력한다.
-        if step is not None and step["kind"] == "line" and s.text:
+        if step is not None and step["kind"] == "line" and s.visible_text:
             y = STORY_TEXT_Y
             for line in self._wrap_story_text(
-                    s.text, STORY_TEXT_SIZE, STORY_TEXT_WIDTH)[:2]:
+                    s.visible_text, STORY_TEXT_SIZE, STORY_TEXT_WIDTH)[:2]:
                 self.text.draw(STORY_TEXT_SIZE, STORY_TEXT_X, y, line,
                                (244, 240, 232), shadow=(6, 6, 16))
                 y -= STORY_LINE_GAP
@@ -2175,9 +2179,9 @@ def main():
                         step = -1 if ev.key == sdl2.SDLK_LEFT else 1
                         game.cycle_dev_stage(step)
                 elif game.state == "cutscene":
-                    # 시나리오는 Space/Enter/클릭으로 넘기고 ESC로 건너뛴다.
+                    # Space/Enter: 타이핑 중엔 전체 표시, 다 나왔으면 다음 턴.
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN):
-                        game.advance_story()
+                        game.story_input()
                     elif ev.key == sdl2.SDLK_ESCAPE:
                         game.finish_cutscene()
                 elif game.state in ("clear", "gameover"):
