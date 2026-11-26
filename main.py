@@ -79,6 +79,20 @@ def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+def in_rect(x, y, rect):
+    """(left, bottom, width, height) 안에 점이 있는지."""
+    left, bottom, width, height = rect
+    return left <= x <= left + width and bottom <= y <= bottom + height
+
+
+def hit_index(rects, x, y):
+    """여러 사각형 중 점이 들어간 첫 번째 인덱스."""
+    for i, rect in enumerate(rects):
+        if in_rect(x, y, rect):
+            return i
+    return None
+
+
 def enable_alpha_blending():
     """도형에도 알파 블렌딩이 적용되게 한다."""
     try:
@@ -998,6 +1012,7 @@ class Game:
         self.smoke_hit = False
         self.smoke_dead = False
         self.smoke_log = []
+        pico2d.hide_cursor()
 
     def next_stage(self):
         """클리어 후 다음 스테이지로. 마지막 스테이지 다음은 1스테이지다."""
@@ -1050,9 +1065,11 @@ class Game:
             self.menu_index = 0
             self.girl.clear_keys()
             self.bgm.pause()
+            pico2d.show_cursor()
         elif self.state == "paused":
             self.state = "play"
             self.bgm.resume()
+            pico2d.hide_cursor()
 
     def open_options(self):
         """일시정지 메뉴의 옵션 화면으로 들어간다."""
@@ -1076,6 +1093,120 @@ class Game:
     def toggle_option_mute(self):
         """전체 음소거를 켜거나 끈다."""
         audio.toggle_muted()
+
+    # ------------------------------------------------------------------
+    # 마우스 조작 (일시정지 / 옵션 / 개발자 메뉴)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _mouse_pos(ev):
+        """SDL 마우스 좌표를 게임 좌표(아래쪽이 +)로 바꾼다."""
+        try:
+            lx, ly = ctypes.c_int(), ctypes.c_int()
+            pico2d.SDL_RenderWindowToLogical(
+                pico2d.pico2d.renderer, int(ev.x), int(ev.y),
+                ctypes.byref(lx), ctypes.byref(ly))
+            return lx.value, HEIGHT - ly.value
+        except Exception:
+            return int(ev.x), HEIGHT - int(ev.y)
+
+    def pause_item_rects(self):
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        return [(cx - 170, cy + 30 - i * 56 - 22, 340, 44)
+                for i in range(len(PAUSE_ITEMS))]
+
+    def option_item_rects(self):
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        ys = (cy + 55, cy - 5, cy - 65, cy - 125)
+        return [(cx - 310, y - 18, 620, 36) for y in ys]
+
+    def slider_bar_rect(self, item):
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        y = cy + 55 if item == "bgm" else cy - 5
+        return (cx - 80, y - 12, 270, 24)
+
+    def dev_item_rects(self):
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        return [(cx - 250, cy + 42 - i * 52 - 20, 500, 40)
+                for i in range(len(DEV_ITEMS))]
+
+    def dev_stage_button_rects(self):
+        cx, cy = WIDTH // 2, HEIGHT // 2
+        return ((cx - 170, cy - 122, 48, 34),
+                (cx + 122, cy - 122, 48, 34))
+
+    def handle_mouse_hover(self, ev):
+        """메뉴 위에 마우스를 올리면 해당 항목을 선택한다."""
+        x, y = self._mouse_pos(ev)
+        if self.state == "paused":
+            idx = hit_index(self.pause_item_rects(), x, y)
+            if idx is not None:
+                self.menu_index = idx
+        elif self.state == "options":
+            idx = hit_index(self.option_item_rects(), x, y)
+            if idx is not None:
+                self.options_index = idx
+        elif self.state == "dev_menu":
+            idx = hit_index(self.dev_item_rects(), x, y)
+            if idx is not None:
+                self.dev_index = idx
+
+    def handle_mouse_click(self, ev):
+        """메뉴 항목을 클릭한다. False 를 돌려주면 게임 종료 요청."""
+        x, y = self._mouse_pos(ev)
+        if self.state == "paused":
+            idx = hit_index(self.pause_item_rects(), x, y)
+            if idx is None:
+                return True
+            self.menu_index = idx
+            choice = PAUSE_ITEMS[idx]
+            if choice == "resume":
+                self.toggle_pause()
+            elif choice == "options":
+                self.open_options()
+            else:
+                return False
+            return True
+
+        if self.state == "options":
+            idx = hit_index(self.option_item_rects(), x, y)
+            if idx is None:
+                return True
+            self.options_index = idx
+            item = OPTION_ITEMS[idx]
+            if item in ("bgm", "sfx"):
+                bar = self.slider_bar_rect(item)
+                if in_rect(x, y, bar):
+                    left, _, width, _ = bar
+                    ratio = clamp((x - left) / float(width), 0.0, 1.0)
+                    value = int(round(audio.MAX_VOLUME * ratio))
+                    if item == "bgm":
+                        audio.set_bgm_volume(value)
+                    else:
+                        audio.set_sfx_volume(value)
+                        audio.apply_sfx_volumes()
+            elif item == "mute":
+                self.toggle_option_mute()
+            else:
+                self.close_options()
+            return True
+
+        if self.state == "dev_menu":
+            idx = hit_index(self.dev_item_rects(), x, y)
+            if idx is not None:
+                self.dev_index = idx
+                self.toggle_dev_option()
+                return True
+            if self.dev_free_stage:
+                left_rect, right_rect = self.dev_stage_button_rects()
+                if in_rect(x, y, left_rect):
+                    self.cycle_dev_stage(-1)
+                elif in_rect(x, y, right_rect):
+                    self.cycle_dev_stage(1)
+            return True
+
+        if self.state == "play":
+            self.girl.request_attack()
+        return True
 
     # ------------------------------------------------------------------
     def update(self, dt):
@@ -1649,7 +1780,8 @@ class Game:
             prefix = "> " if selected else "  "
             self.text.draw(28, cx, cy + 30 - i * 56, prefix + labels[item],
                            color, "center")
-        self.text.draw(16, cx, cy - 145, "UP / DOWN 선택   ENTER 확인   ESC 닫기",
+        self.text.draw(16, cx, cy - 145,
+                       "UP / DOWN 선택   ENTER/클릭 확인   ESC 닫기",
                        (120, 136, 172), "center", shadow=None)
 
     def _draw_options(self):
@@ -1705,7 +1837,7 @@ class Game:
         marker = "> " if selected else "  "
         self.text.draw(24, cx - 300, y - 8, marker + "뒤로", color, "left")
         self.text.draw(16, cx, cy - 170,
-                       "↑/↓ 선택   ←/→ 음량 조절   ENTER 토글   ESC 뒤로",
+                       "↑/↓ 선택   ←/→ 또는 클릭으로 음량 조절   ENTER 토글   ESC 뒤로",
                        (120, 136, 172), "center", shadow=None)
 
     def _draw_dev_menu(self):
@@ -1737,8 +1869,20 @@ class Game:
             self.text.draw(26, cx, cy + 42 - i * 52,
                            "%s%s : %s" % (marker, labels[item], state),
                            color, "center")
-        self.text.draw(16, cx, cy - 112,
-                       "↑/↓ 선택   ENTER 토글   ←/→ 스테이지 이동   F11 닫기",
+
+        for rect, label in zip(self.dev_stage_button_rects(), ("◀", "▶")):
+            left, bottom, width, height = rect
+            enabled = self.dev_free_stage
+            fill = (55, 95, 150, 230) if enabled else (35, 40, 55, 170)
+            text_color = ((220, 235, 255) if enabled else (100, 110, 130))
+            pico2d.draw_rectangle(left, bottom, left + width, bottom + height,
+                                  *fill, filled=True)
+            pico2d.draw_rectangle(left, bottom, left + width, bottom + height,
+                                  120, 180, 230, 190)
+            self.text.draw(22, left + width // 2, bottom + 8, label,
+                           text_color, "center", shadow=None)
+        self.text.draw(16, cx, cy - 142,
+                       "↑/↓ 선택   ENTER/클릭 토글   ←/→ 또는 버튼 스테이지 이동   F11 닫기",
                        (130, 150, 190), "center", shadow=None)
 
     def _draw_skill_unlock(self):
@@ -1935,10 +2079,12 @@ def main():
             elif ev.type == sdl2.SDL_KEYUP:
                 if game.state == "play":
                     game.girl.handle_event(ev)
+            elif ev.type == sdl2.SDL_MOUSEMOTION:
+                game.handle_mouse_hover(ev)
             elif (ev.type == sdl2.SDL_MOUSEBUTTONDOWN
-                  and ev.button == sdl2.SDL_BUTTON_LEFT
-                  and game.state == "play"):
-                game.girl.request_attack()
+                  and ev.button == sdl2.SDL_BUTTON_LEFT):
+                if not game.handle_mouse_click(ev):
+                    running = False
 
         game.update(dt)
         game.draw()
