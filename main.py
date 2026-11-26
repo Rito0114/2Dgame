@@ -1027,7 +1027,9 @@ class Game:
                              and not self.smoke and not self.skip_story))
         self.skill_popup_time = 0.0
         # 스테이지별 오프닝을 전투 전에 보여준다. smoke/개발자 이동은 생략.
+        # 3스테이지 대사는 WARNING 직후 보스가 걸어나온 뒤에 별도로 시작한다.
         show_story = (self.stage in story.STORY_BY_STAGE
+                      and self.stage != 3
                       and not skip_story and not self.smoke
                       and not self.skip_story)
         if show_story:
@@ -1086,7 +1088,7 @@ class Game:
             return
         step = self.story.advance()
         if self.story.finished:
-            self.begin_stage_intro()
+            self._finish_story()
         elif step is not None:
             self._apply_story_effect(step)
 
@@ -1139,16 +1141,60 @@ class Game:
         pico2d.hide_cursor()
 
     def enter_boss_stage(self):
-        """WARNING 연출이 끝나면 보스가 있는 스테이지 3으로 진입한다."""
+        """WARNING 연출이 끝나면 보스 스테이지로 진입한다."""
         self.stage = 3
         self.start(skip_story=True)
-        self.state = "play"
+        self._begin_boss_entry()
+
+    def _begin_boss_entry(self):
+        """보스가 화면 오른쪽 밖에서 걸어나와 IDLE 로 멈추게 한다."""
+        boss = self.world.boss
+        if boss is None:
+            self.state = "play"
+            return
+        boss.begin_entry(self.world.spec.boss_x)
+        self.state = "boss_entry"
         self.shake = 18.0
         self.sfx.play("bomb_sound.mp3")
+        self.girl.clear_keys()
+        pico2d.hide_cursor()
+
+    def _update_boss_entry(self, dt):
+        boss = self.world.boss
+        if boss is not None:
+            boss.update(dt, boss.x)
+        self._update_effects(dt)
+        if boss is None or boss.entry_done:
+            self.begin_boss_story()
+
+    def skip_boss_entry(self):
+        """Space/Enter/ESC: 등장 연출을 건너뛰고 대사를 시작한다."""
+        if self.state != "boss_entry":
+            return
+        if self.world.boss is not None:
+            self.world.boss.finish_entry()
+        self.begin_boss_story()
+
+    def begin_boss_story(self):
+        """걸어온 보스가 멈춘 뒤 3스테이지 대사를 시작한다."""
+        if self.state != "boss_entry":
+            return
         boss = self.world.boss
         if boss is not None:
             self.burst(boss.x, boss.y + boss.height * 0.5,
                        (255, 90, 80), 42, 460, 1.0, 7, gravity=120)
+        first = self.story.reset(3)
+        self.state = "cutscene"
+        self._apply_story_effect(first)
+        self.girl.clear_keys()
+        pico2d.hide_cursor()
+
+    def _finish_story(self):
+        """3스테이지 대사는 제목/ WARNING 없이 바로 전투로 들어간다."""
+        if self.story.key == 3:
+            self.finish_cutscene()
+        else:
+            self.begin_stage_intro()
 
     def _apply_story_effect(self, step):
         """새 단계에 진입할 때 한 번만 실행되는 연출/효과음."""
@@ -1203,6 +1249,9 @@ class Game:
         self.stage = (self.stage - 1 + direction) % len(STAGES) + 1
         self.dev_prev_state = None
         self.start()
+        if (self.stage == 3 and not self.smoke and not self.skip_story):
+            # 보스 스테이지도 이동 후 같은 등장 연출 → 대사부터 시작한다.
+            self._begin_boss_entry()
 
     def toggle_pause(self):
         if self.state == "play":
@@ -1298,6 +1347,9 @@ class Game:
     def handle_mouse_click(self, ev):
         """메뉴 항목을 클릭한다. False 를 돌려주면 게임 종료 요청."""
         x, y = self._mouse_pos(ev)
+        if self.state == "boss_entry":
+            self.skip_boss_entry()
+            return True
         if self.state == "cutscene":
             self.story_input()
             return True
@@ -1384,7 +1436,9 @@ class Game:
         if self.state == "dev_menu":
             return
 
-        if self.state == "cutscene":
+        if self.state == "boss_entry":
+            self._update_boss_entry(dt)
+        elif self.state == "cutscene":
             self._update_cutscene(dt)
         elif self.state == "stage_intro":
             self._update_stage_intro(dt)
@@ -1398,7 +1452,7 @@ class Game:
         if step is not None:
             self._apply_story_effect(step)
         if self.story.finished:
-            self.begin_stage_intro()
+            self._finish_story()
             return
         self._update_effects(dt)
 
@@ -2350,6 +2404,10 @@ def main():
                           and ev.key in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT)):
                         step = -1 if ev.key == sdl2.SDLK_LEFT else 1
                         game.cycle_dev_stage(step)
+                elif game.state == "boss_entry":
+                    if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN,
+                                  sdl2.SDLK_ESCAPE):
+                        game.skip_boss_entry()
                 elif game.state == "cutscene":
                     # Space/Enter: 타이핑 중엔 전체 표시, 다 나왔으면 다음 턴.
                     if ev.key in (sdl2.SDLK_SPACE, sdl2.SDLK_RETURN):

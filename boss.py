@@ -21,6 +21,8 @@ BOSS_HP = 100  # 보스 최대 체력
 PHASE_HP_RANGES = ((100, 67), (66, 34), (33, 0))
 PHASE_MIN_HP = (67, 34)  # 각 페이즈를 유지하는 최소 체력
 BOSS_SPEED = 105.0  # 플레이어를 향해 걸어가는 속도
+ENTRY_WALK_SPEED = 260.0  # 대사 전 연출에서 화면 오른쪽에서 걸어오는 속도
+ENTRY_IDLE_TIME = 1.4  # 걸어온 뒤 대사가 시작되기 전까지 멈춰 있는 시간
 FLASH_TIME = 0.14  # 맞았을 때 하얗게 번쩍이는 시간
 
 RISING_TIME = BOSS_SPRITES["rising"].duration
@@ -65,6 +67,9 @@ class Boss:
         self.flash = 0.0
         self.hit_cooldown = 0.0  # 접촉 중 여러 번 맞는 것을 막는다
         self.last_attack = -1  # 같은 공격에 여러 번 맞지 않도록
+        self.entry_target = 0.0  # 걸어와서 멈출 x
+        self.entry_walking = False  # 화면 밖에서 걸어오는 중
+        self.entry_idle = 0.0  # 걸어온 뒤 IDLE 로 멈춰 있는 남은 시간
 
     @property
     def defeated(self):
@@ -74,6 +79,30 @@ class Boss:
     def phase(self):
         """현재 체력에 해당하는 페이즈(1~3)."""
         return phase_for_hp(self.hp)
+
+    @property
+    def entry_done(self):
+        """걸어오기와 IDLE 대기가 끝나 대사를 시작해도 되는 상태."""
+        return not self.entry_walking and self.entry_idle <= 0.0
+
+    def begin_entry(self, target_x):
+        """오른쪽 화면 밖에서 target_x 까지 걸어온 뒤 잠시 IDLE 한다."""
+        half = self.width * 0.5
+        self.x = self.right - half  # 화면 오른쪽 밖
+        self.entry_target = float(target_x)
+        self.entry_walking = True
+        self.entry_idle = ENTRY_IDLE_TIME
+        self.rise_time = RISING_TIME  # 등장 모션은 화면 밖에서 끝난다
+        self.idle_time = 0.0
+        self.facing = -1
+        self.walking = True
+
+    def finish_entry(self):
+        """입력으로 등장 연출을 건너뛴다."""
+        self.x = self.entry_target
+        self.entry_walking = False
+        self.entry_idle = 0.0
+        self.walking = False
 
     def rect(self):
         return (self.x - self.width * 0.5, self.y,
@@ -110,6 +139,25 @@ class Boss:
             self.death_time = 0.0
         return True
 
+    def _update_entry(self, dt):
+        """걸어오기 → IDLE 대기. 이 동안에는 플레이어를 쫓지 않는다."""
+        if self.entry_walking:
+            diff = self.entry_target - self.x
+            step = ENTRY_WALK_SPEED * dt
+            if abs(diff) <= step:
+                self.x = self.entry_target
+                self.entry_walking = False
+                self.walking = False
+            else:
+                self.x += step if diff > 0.0 else -step
+                self.facing = 1 if diff > 0.0 else -1
+                self.walking = True
+        else:
+            self.walking = False
+            self.entry_idle = max(0.0, self.entry_idle - dt)
+        half = self.width * 0.5
+        self.x = max(self.left + half, min(self.right - half, self.x))
+
     def update(self, dt, player_x):
         self.anim_time += dt
         self.flash = max(0.0, self.flash - dt)
@@ -118,6 +166,9 @@ class Boss:
         self.hit_time = max(0.0, self.hit_time - dt)
         if not self.alive:
             self.death_time += dt
+            return
+        if self.entry_walking or self.entry_idle > 0.0:
+            self._update_entry(dt)
             return
         if self.rise_time < RISING_TIME:
             self.rise_time = min(RISING_TIME, self.rise_time + dt)
