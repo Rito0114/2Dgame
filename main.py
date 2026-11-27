@@ -38,6 +38,7 @@ from punch import PunchImpact, draw_punch
 from bench import Bench
 from box import Box
 from road import Road
+from scenery import BossScenery
 import story
 
 WIDTH, HEIGHT = 1280, 720
@@ -605,6 +606,7 @@ class World:
         self.road = Road(os.path.join(obj, spec.road))
         self.lamp = Lamp()
         self.fence = Fence(os.path.join(obj, spec.fence))
+        self.scenery = BossScenery(self.world_w, GROUND) if spec.boss else None
         self.ground_spans = []
         self.furniture = []  # (종류, 그림 객체, 그림 중심 x)
         self.boss = (Boss(spec.boss_x, STAND_Y, spec.boss_left, spec.boss_right)
@@ -790,7 +792,10 @@ class World:
     # 배경
     # ------------------------------------------------------------------
     def draw_background(self, camera_x, time, shake_x=0.0):
-        self.background.draw(art(), camera_x, shake_x)
+        a = art()
+        self.background.draw(a, camera_x, shake_x)
+        if self.scenery is not None:
+            self.scenery.draw(a, camera_x, shake_x)
 
     # ------------------------------------------------------------------
     # 발판
