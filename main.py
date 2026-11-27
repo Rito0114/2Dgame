@@ -1200,9 +1200,19 @@ class Game:
         self.girl.clear_keys()
         pico2d.hide_cursor()
 
+    def begin_phase2_story(self):
+        """1페이즈가 끝나고 2페이즈가 시작될 때 대사를 재생한다."""
+        if self.state != "play":
+            return
+        first = self.story.reset("3_phase2")
+        self.state = "cutscene"
+        self._apply_story_effect(first)
+        self.girl.clear_keys()
+        pico2d.hide_cursor()
+
     def _finish_story(self):
         """3스테이지 대사는 제목/ WARNING 없이 바로 전투로 들어간다."""
-        if self.story.key == 3:
+        if self.story.key in (3, "3_phase2"):
             self.finish_cutscene()
         else:
             self.begin_stage_intro()

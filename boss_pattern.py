@@ -425,6 +425,10 @@ class BossPattern:
             self.melee_cooldown = MELEE_COOLDOWN
             self.aim_pos = None
             self._enter("phase2")
+            # 대사가 준비된 게임이면 2페이즈 시작 컷신을 띄운다.
+            notify = getattr(self.game, "begin_phase2_story", None)
+            if notify is not None:
+                notify()
 
     def _state_phase2(self, dt):
         self.boss.phase_state = 2
