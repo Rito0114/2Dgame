@@ -14,6 +14,7 @@ idle / melee / ranged / downtime / gimmick_start / grenade
 
 import math
 import os
+import random
 
 import pico2d
 
@@ -24,7 +25,9 @@ from cat import Bullet
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STONE_FILE = os.path.join(BASE_DIR, "sprites", "object", "stone.png")
+LASER_FILE = os.path.join(BASE_DIR, "sprites", "object", "raser.png")
 _stone_image = None
+_laser_image = None
 
 # ---------------------------------------------------------------------------
 # 1페이즈 기본 공격
@@ -66,6 +69,14 @@ SKILL1_DURATION = BOSS_SPRITES["skill1"].duration
 SKILL2_DURATION = BOSS_SPRITES["skill2"].duration
 DEADSHOT_SPEED = 1400.0
 
+# Skill2 중 레이저 패턴
+LASER_COUNT = 10  # 총 발동 횟수
+LASER_INTERVAL = 3.0  # 레이저 생성 간격
+LASER_WARN_TIME = 2.0  # 미리 경고를 띄우는 시간
+LASER_ACTIVE_TIME = 2.0  # 레이저 유지 시간
+LASER_HIT_HEIGHT = 40.0  # 피격 판정 높이
+LASER_WARN_COLOR = (235, 40, 40)
+
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",
               "rock_stun", "rock_stun_down", "phase2",
@@ -99,6 +110,9 @@ class BossPattern:
         self.rock = None
         self.deadshot = None
         self.move_target_x = 0.0  # 2페이즈 오른쪽 끝 이동 목표
+        self.lasers = []  # Skill2 레이저 {"t", "y", "hit"}
+        self.laser_count = 0  # 지금까지 생성한 레이저 수
+        self.laser_spawn_timer = 0.0
         self.gimmick_done = False  # 기믹 완료 후 HP 67이어도 재시작하지 않는다
 
     # ------------------------------------------------------------------
@@ -482,14 +496,60 @@ class BossPattern:
         if self.time >= SKILL1_DURATION:
             # 곧바로 Skill2 를 무한 반복한다.
             self.boss.float_offset = PHASE2_FLOAT_HEIGHT
+            self.lasers = []
+            self.laser_count = 0
+            self.laser_spawn_timer = 0.0
             self._clear_attack()
             self.boss.play_attack("skill2")
             self._enter("phase2_skill2")
+
+    def _laser_heights(self):
+        """캐릭터가 밟을 수 있는 세 높이: 지면, 상자 1층, 상자 2층."""
+        heights = [self.ground_y]
+        for kind, prop, cx in self.game.world.furniture:
+            if kind == "high":
+                heights.append(prop.level_surface(1)[2])
+                heights.append(prop.level_surface(2)[2])
+                break
+        return heights
+
+    def _spawn_laser(self):
+        self.lasers.append({
+            "t": 0.0,
+            "y": random.choice(self._laser_heights()),
+            "hit": False,
+        })
+        self.laser_count += 1
+        self.game.sfx.play("skill_sound.mp3", 0.3)
+
+    def _update_lasers(self, dt):
+        """3초마다 레이저를 만들고, 2초 경고 후 2초 동안 피격 판정한다."""
+        if self.laser_count < LASER_COUNT:
+            self.laser_spawn_timer += dt
+            if self.laser_spawn_timer >= LASER_INTERVAL:
+                self.laser_spawn_timer -= LASER_INTERVAL
+                self._spawn_laser()
+
+        girl = self.game.girl
+        end = LASER_WARN_TIME + LASER_ACTIVE_TIME
+        for laser in self.lasers:
+            laser["t"] += dt
+            if laser["t"] < LASER_WARN_TIME or laser["t"] >= end:
+                continue
+            if laser["hit"]:
+                continue
+            # 그 높이에 서 있는 캐릭터만 맞는다.
+            if abs(girl.y - laser["y"]) <= LASER_HIT_HEIGHT:
+                if girl.take_hit(laser["y"]):
+                    laser["hit"] = True
+                    self.game.shake = max(self.game.shake, 6.0)
+        self.lasers = [laser for laser in self.lasers if laser["t"] < end]
 
     def _state_phase2_skill2(self, dt):
         """Skill2 애니메이션을 계속 반복한다. 카메라는 보스에 고정된다."""
         self.boss.float_offset = PHASE2_FLOAT_HEIGHT
         self.game.camera_follow = "boss"
+        self._update_lasers(dt)
         # 캐릭터가 보스가 비친 화면 밖으로 나가지 못하게 가둔다.
         girl = self.game.girl
         left = self.game.camera + SCREEN_MARGIN
@@ -517,3 +577,22 @@ class BossPattern:
             disc = art.disc((235, 40, 40))
             x = self.aim_pos[0] - camera_x + shake_x
             art.blit(disc, x, self.aim_pos[1], ELLIPSE_W, 92, 200)
+
+        # Skill2 레이저: 경고(빨간 사각형) → raser.png 로 발사.
+        for laser in self.lasers:
+            t = laser["t"]
+            if t < LASER_WARN_TIME:
+                # 깜빡이는 빨간 사각형으로 2초 전에 미리 경고한다.
+                alpha = 110 if int(t * 8) % 2 == 0 else 55
+                pico2d.draw_rectangle(
+                    shake_x, laser["y"] - 22,
+                    SCREEN_WIDTH + shake_x, laser["y"] + 22,
+                    *LASER_WARN_COLOR, alpha, filled=True)
+                continue
+            if t >= LASER_WARN_TIME + LASER_ACTIVE_TIME:
+                continue
+            global _laser_image
+            if _laser_image is None:
+                _laser_image = pico2d.load_image(LASER_FILE)
+            art.blit(_laser_image, SCREEN_WIDTH * 0.5 + shake_x,
+                     laser["y"], SCREEN_WIDTH, 720)
