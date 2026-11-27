@@ -18,6 +18,7 @@ import os
 import pico2d
 
 from boss import RISING_TIME
+from boss_sprites import BOSS_SPRITES
 from bomb import Bomb, ELLIPSE_W
 from cat import Bullet
 
@@ -56,12 +57,16 @@ AIM_LOCK_BEFORE = 1.0
 GRENADE_SHAKE = 18.0  # 수류탄 폭발 시 화면 흔들림 진폭
 ROCK_FALL_TIME = 0.6
 ROCK_STUN_TIME = 5.0
+PHASE2_FLOAT_HEIGHT = 190.0  # Skill1 로 떠오를 높이
 PHASE2_ANIM_TIME = RISING_TIME  # 일어나는 애니메이션이 끝날 때까지 유지
+SKILL1_DURATION = BOSS_SPRITES["skill1"].duration
+SKILL2_DURATION = BOSS_SPRITES["skill2"].duration
 DEADSHOT_SPEED = 1400.0
 
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",
-              "rock_stun", "rock_stun_down", "phase2")
+              "rock_stun", "rock_stun_down", "phase2",
+              "phase2_skill1", "phase2_skill2")
 
 
 class BossPattern:
@@ -430,10 +435,36 @@ class BossPattern:
             if notify is not None:
                 notify()
 
+    def _begin_phase2_skills(self):
+        """Skill1 로 떠오르기 시작한다."""
+        self.boss.hovering = True
+        self.boss.float_offset = 0.0
+        self._clear_attack()
+        self.boss.play_attack("skill1")
+        self._enter("phase2_skill1")
+
     def _state_phase2(self, dt):
         self.boss.phase_state = 2
         if self.time >= PHASE2_ANIM_TIME:
-            self._enter("idle")
+            self._begin_phase2_skills()
+
+    def _state_phase2_skill1(self, dt):
+        """Skill1 모션과 함께 공중으로 떠오른다."""
+        t = min(1.0, self.time / SKILL1_DURATION)
+        self.boss.float_offset = PHASE2_FLOAT_HEIGHT * t
+        if self.time >= SKILL1_DURATION:
+            # 곧바로 Skill2 를 무한 반복한다.
+            self.boss.float_offset = PHASE2_FLOAT_HEIGHT
+            self._clear_attack()
+            self.boss.play_attack("skill2")
+            self._enter("phase2_skill2")
+
+    def _state_phase2_skill2(self, dt):
+        """Skill2 애니메이션을 계속 반복한다."""
+        self.boss.float_offset = PHASE2_FLOAT_HEIGHT
+        if self.boss.attack_t is None:
+            self._clear_attack()
+            self.boss.play_attack("skill2")
 
     # ------------------------------------------------------------------
     # 그리기

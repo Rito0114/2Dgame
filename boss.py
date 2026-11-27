@@ -59,6 +59,8 @@ class Boss:
         self.vx = -BOSS_SPEED
         self.facing = -1
         self.walking = False  # 실제로 움직일 때만 걷기 모션, 그 외에는 IDLE
+        self.float_offset = 0.0  # 2페이즈 공중 부유 높이
+        self.hovering = False  # 부유 중에는 자리를 옮기지 않는다
         self.rise_time = 0.0  # 등장 모션 진행 시간
         self.idle_time = IDLE_INTRO_TIME  # 등장 연출 동안에는 제자리에서 대기
         self.hit_time = 0.0  # 피격 모션 진행 시간
@@ -114,7 +116,7 @@ class Boss:
         self.walking = False
 
     def rect(self):
-        return (self.x - self.width * 0.5, self.y,
+        return (self.x - self.width * 0.5, self.y + self.float_offset,
                 self.width, self.height)
 
     def _attack_name(self):
@@ -158,6 +160,8 @@ class Boss:
             self.alive = False
             self.attack_t = None
             self.death_time = 0.0
+            self.float_offset = 0.0  # 죽을 때는 땅에서 쓰러진다
+            self.hovering = False
         return True
 
     def _update_entry(self, dt):
@@ -211,6 +215,7 @@ class Boss:
                     and self.hit_time <= 0.0
                     # 1페이즈에서는 공격 모션 중에도 움직여서 멈춰 서지 않게 한다.
                     and (self.phase == 1 or not self.is_attacking())
+                    and not self.hovering
                     and abs(distance) > 40.0)
         if can_walk:
             direction = 1.0 if distance > 0.0 else -1.0
@@ -244,5 +249,6 @@ class Boss:
             name, t = "walk", self.anim_time
         else:
             name, t = "idle", self.anim_time
-        BOSS_SPRITES[name].draw(self.x, self.y, self.facing, t,
-                                camera_x, shake_x, BOSS_SCALE)
+        BOSS_SPRITES[name].draw(self.x, self.y + self.float_offset,
+                                self.facing, t, camera_x, shake_x,
+                                BOSS_SCALE)
