@@ -15,8 +15,8 @@ from girl import Girl
 
 # 시트별 보이는 크기 차이는 BossSprite.scale 이 주인공 크기로 보정한다.
 BOSS_SCALE = 1.0
-# 충돌 박스도 주인공과 같은 크기로 맞춘다.
-BOSS_WIDTH = Girl.HITBOX_W
+# 충돌 박스는 주인공보다 가로로 1.5배 넓게 잡는다.
+BOSS_WIDTH = Girl.HITBOX_W * 1.5
 BOSS_HEIGHT = Girl.HITBOX_H
 BOSS_HP = 100  # 보스 최대 체력
 BASIC_ATTACK_DAMAGE = 2  # 기본 공격(펀치, 밟기) 데미지
@@ -244,8 +244,3 @@ class Boss:
             name, t = "idle", self.anim_time
         BOSS_SPRITES[name].draw(self.x, self.y, self.facing, t,
                                 camera_x, shake_x, BOSS_SCALE)
-        if self.alive and self.flash > 0.0:
-            x = self.x - camera_x + shake_x
-            art.blit(art.disc((255, 255, 255)), x,
-                     self.y + self.height * 0.45,
-                     self.width * 1.1, self.height * 0.95, alpha=110)

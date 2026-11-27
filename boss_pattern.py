@@ -365,7 +365,9 @@ class BossPattern:
         if not self.last_bomb.exploded:
             return
         self.last_hit_handled = True
-        self._grenade_hit(self.last_bomb)
+        # 마지막 수류탄도 착탄 타원 안에 있을 때만 체력이 깎인다.
+        if abs(self.game.girl.focus_x() - self.last_bomb.x) <= ELLIPSE_W * 0.5:
+            self._grenade_hit(self.last_bomb)
 
         scenery = self.game.world.scenery
         if scenery is None or scenery.pillar_at(self.aim_x) is None:
@@ -404,6 +406,8 @@ class BossPattern:
             self.boss.phase_state = 2
             self.boss.hp_locked = False
             self.gimmick_done = True
+            # 1페이즈가 끝나면 캐릭터 체력을 전부 회복한다.
+            self.game.girl.hp = self.game.girl.MAX_HP
             self.downtime_timer = DOWNTIME_INTERVAL
             self.ranged_cooldown = RANGED_COOLDOWN
             self.melee_cooldown = MELEE_COOLDOWN
