@@ -12,11 +12,16 @@ import pico2d
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SPRITE_DIR = os.path.join(BASE_DIR, "sprites", "boss")
 
+# 주인공(idle_sprite.png 첫 프레임: 원본 431px * SCALE 0.38)의 화면상 보이는 높이.
+# 모든 보스 애니메이션의 가장 큰 프레임이 이 높이가 되도록 시트별 배율을 정한다.
+PLAYER_VISIBLE_HEIGHT = 164.0
+
 
 class BossSprite:
     """한 장의 애니메이션 시트."""
 
-    def __init__(self, filename, cols, rows, frame_time, foot_pads):
+    def __init__(self, filename, cols, rows, frame_time, foot_pads,
+                 visible_height):
         self.path = os.path.join(SPRITE_DIR, filename)
         self.cols = cols
         self.rows = rows
@@ -24,6 +29,10 @@ class BossSprite:
         self.foot_pads = foot_pads
         self.frames = cols * rows
         self.duration = frame_time * self.frames
+        # 시트마다 칸 크기와 그림 크기가 달라 보이는 크기가 제각각이었다.
+        # 프레임에서 가장 큰 보이는 높이를 주인공 높이에 맞춰 스케일을 보정한다.
+        self.visible_height = float(visible_height)
+        self.scale = PLAYER_VISIBLE_HEIGHT / self.visible_height
         self._image = None
 
     def image(self):
@@ -46,59 +55,63 @@ class BossSprite:
         return int(max(0.0, t) / self.frame_time) % self.frames
 
     def draw(self, x, y, facing, t, camera_x=0.0, shake_x=0.0, scale=1.0):
-        """(x, y) 를 발밑 중앙으로 해서 한 프레임을 그린다."""
+        """(x, y) 를 발밑 중앙으로 해서 주인공 크기로 한 프레임을 그린다."""
         frame = self.frame_at(t)
         left, bottom, width, height = self.cell(frame)
         foot = self.foot_pads[frame]
+        # scale 은 외부에서 곱하는 추가 배율. 기본값 1 이 시트 보정 배율이다.
+        draw_scale = scale * self.scale
         center_x = x - camera_x + shake_x
-        center_y = y - foot * scale + height * scale * 0.5
+        center_y = y - foot * draw_scale + height * draw_scale * 0.5
         flip = "h" if facing < 0 else ""
         self.image().clip_composite_draw(
             left, bottom, width, height, 0.0, flip,
-            center_x, center_y, width * scale, height * scale,
+            center_x, center_y, width * draw_scale, height * draw_scale,
         )
         return frame
 
 
 # foot_pads: 각 프레임의 칸 아래쪽에서 발바닥까지의 거리(원본 px).
 # 행마다 그림이 어긋나 있어 프레임별로 측정해 두어야 발이 흔들리지 않는다.
+# visible_height: 시트에서 가장 큰 프레임의 보이는 높이(원본 px, alpha>8 기준).
+# 시트마다 이 값이 달라 같은 배율로 그리면 크기가 제각각이 되었다.
 BOSS_SPRITES = {
     "idle": BossSprite(
         "Boss_Idle.png", 5, 2, 0.12,
-        (41, 41, 41, 41, 41, 70, 70, 70, 71, 70)),
+        (41, 41, 41, 41, 41, 70, 70, 70, 71, 70), 340),
     "walk": BossSprite(
         "Boss_Walk.png", 4, 2, 0.10,
-        (16, 18, 19, 18, 17, 16, 15, 14)),
+        (16, 18, 19, 18, 17, 16, 15, 14), 371),
     "rising": BossSprite(
         "Boss_Rising.png", 5, 2, 0.10,
-        (35, 39, 40, 0, 0, 28, 28, 28, 28, 28)),
+        (35, 39, 40, 0, 0, 28, 28, 28, 28, 28), 334),
     "hit": BossSprite(
         "Boss_Hit.png", 5, 2, 0.06,
-        (13, 13, 14, 18, 40, 20, 23, 22, 22, 18)),
+        (13, 13, 14, 18, 40, 20, 23, 22, 22, 18), 330),
     "fire": BossSprite(
         "Boss_Fire.png", 5, 2, 0.08,
-        (27, 27, 27, 28, 28, 26, 26, 26, 25, 25)),
+        (27, 27, 27, 28, 28, 26, 26, 26, 25, 25), 312),
     "knife": BossSprite(
         "Boss_Knife.png", 5, 2, 0.08,
-        (15, 15, 15, 15, 15, 19, 20, 19, 17, 16)),
+        (15, 15, 15, 15, 15, 19, 20, 19, 17, 16), 330),
     "throw": BossSprite(
         "Boss_Throw.png", 5, 2, 0.08,
-        (10, 13, 14, 14, 16, 15, 15, 15, 15, 15)),
+        (10, 13, 14, 14, 16, 15, 15, 15, 15, 15), 335),
     "skill1": BossSprite(
         "Boss_Skill1.png", 5, 2, 0.08,
-        (29, 30, 34, 38, 40, 36, 32, 28, 28, 29)),
+        (29, 30, 34, 38, 40, 36, 32, 28, 28, 29), 323),
     "skill2": BossSprite(
         "Boss_Skill2.png", 5, 2, 0.08,
-        (24, 24, 28, 28, 30, 32, 29, 30, 27, 29)),
+        (24, 24, 28, 28, 30, 32, 29, 30, 27, 29), 327),
     "skill3": BossSprite(
         "Boss_Skill3.png", 5, 2, 0.08,
-        (7, 7, 7, 10, 33, 38, 39, 39, 39, 38)),
+        (7, 7, 7, 10, 33, 38, 39, 39, 39, 38), 342),
     "retire": BossSprite(
         "Boss_Retire.png", 5, 2, 0.09,
-        (9, 10, 10, 10, 9, 32, 32, 32, 31, 30)),
+        (9, 10, 10, 10, 9, 32, 32, 32, 31, 30), 344),
     "retire2": BossSprite(
         "Boss_Retire2.png", 5, 2, 0.09,
-        (5, 6, 7, 6, 2, 18, 20, 20, 22, 22)),
+        (5, 6, 7, 6, 2, 18, 20, 20, 22, 22), 353),
 }
 
 IDLE = BOSS_SPRITES["idle"]

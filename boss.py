@@ -6,16 +6,18 @@
 - 피격: Hit
 - 쓰러짐: Retire → Retire2
 
-크기와 체력은 기존 곰 적을 기준으로 한다. 공격으로 여러 번 맞춰야 쓰러지고,
+크기는 주인공과 같고, 체력은 100이다. 공격으로 여러 번 맞춰야 쓰러지고,
 쓰러지면 스테이지가 바로 클리어된다.
 """
 
-from bear import BEAR_HEIGHT, BEAR_WIDTH, SCALE
 from boss_sprites import ATTACK_NAMES, BOSS_SPRITES
+from girl import Girl
 
-BOSS_SCALE = SCALE * 1.9  # 일반 곰보다 약 1.9배 크게
-BOSS_WIDTH = int(BEAR_WIDTH * BOSS_SCALE / SCALE)
-BOSS_HEIGHT = int(BEAR_HEIGHT * BOSS_SCALE / SCALE)
+# 시트별 보이는 크기 차이는 BossSprite.scale 이 주인공 크기로 보정한다.
+BOSS_SCALE = 1.0
+# 충돌 박스도 주인공과 같은 크기로 맞춘다.
+BOSS_WIDTH = Girl.HITBOX_W
+BOSS_HEIGHT = Girl.HITBOX_H
 BOSS_HP = 100  # 보스 최대 체력
 # 페이즈 구간: 1페이즈 100~67, 2페이즈 66~34, 3페이즈 33~0
 PHASE_HP_RANGES = ((100, 67), (66, 34), (33, 0))
