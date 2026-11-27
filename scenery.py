@@ -35,6 +35,7 @@ class BossScenery:
     def __init__(self, world_w, ground_y):
         self.world_w = world_w
         self.ground_y = ground_y
+        self.hidden_pillars = set()  # 상자 뒤에 가려진 기둥 번호
         self._wall = None
         self._pillar = None
 
@@ -51,10 +52,25 @@ class BossScenery:
             self._pillar = pico2d.load_image(PILLAR_FILE)
         return self._pillar
 
+    def hide_pillars_behind(self, furniture):
+        """상자('high')가 앞에 놓인 기둥은 그리지 않고 판정에서도 제외한다."""
+        self.hidden_pillars = set()
+        step = self.world_w / PILLAR_COUNT
+        for kind, prop, cx in furniture:
+            if kind != "high":
+                continue
+            half = prop.size() * 0.5
+            for i in range(PILLAR_COUNT):
+                pillar_x = step * (i + 0.5)
+                if abs(cx - pillar_x) <= PILLAR_CONTENT_HALF + half:
+                    self.hidden_pillars.add(i)
+
     def pillar_at(self, x, half_w=0.0):
-        """월드 x 가 기둥 그림 범위에 있으면 기둥 번호를, 없으면 None."""
+        """월드 x 가 보이는 기둥 그림 범위에 있으면 기둥 번호를, 없으면 None."""
         step = self.world_w / PILLAR_COUNT
         for i in range(PILLAR_COUNT):
+            if i in self.hidden_pillars:
+                continue
             cx = step * (i + 0.5)
             if abs(x - cx) <= PILLAR_CONTENT_HALF + half_w:
                 return i
@@ -66,6 +82,8 @@ class BossScenery:
 
         step = self.world_w / PILLAR_COUNT
         for i in range(PILLAR_COUNT):
+            if i in self.hidden_pillars:
+                continue
             self._draw(art, self.pillar, step * (i + 0.5),
                        PILLAR_SCALE, PILLAR_BOX, camera_x, shake_x)
 

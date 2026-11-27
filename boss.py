@@ -208,7 +208,9 @@ class Boss:
         old_x = self.x
         distance = player_x - self.x
         can_walk = (self.rise_time >= RISING_TIME and self.idle_time <= 0.0
-                    and self.hit_time <= 0.0 and not self.is_attacking()
+                    and self.hit_time <= 0.0
+                    # 1페이즈에서는 공격 모션 중에도 움직여서 멈춰 서지 않게 한다.
+                    and (self.phase == 1 or not self.is_attacking())
                     and abs(distance) > 40.0)
         if can_walk:
             direction = 1.0 if distance > 0.0 else -1.0

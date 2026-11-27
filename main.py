@@ -769,6 +769,8 @@ class World:
 
         # 벤치와 상자를 랜덤으로 배치하고, 그 윗면을 발판으로 만든다.
         self._place_furniture(spec.bench_count, spec.box_count)
+        if self.scenery is not None:
+            self.scenery.hide_pillars_behind(self.furniture)
         self._add_surfaces()
 
         for x1, x2, y in spec.coin_lines:
