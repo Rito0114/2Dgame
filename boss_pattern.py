@@ -74,24 +74,32 @@ DEADSHOT_SPEED = 1400.0
 LASER_COUNT = 10  # 총 발동 횟수
 LASER_INTERVAL = 3.0  # 레이저 생성 간격
 LASER_WARN_TIME = 2.0  # 미리 경고를 띄우는 시간
-LASER_ACTIVE_TIME = 2.0  # 레이저 유지 시간
+LASER_ACTIVE_TIME = 1.0  # 레이저 유지 시간
 LASER_HIT_HEIGHT = 40.0  # 피격 판정 높이
 LASER_WARN_COLOR = (235, 40, 40)
 
-# raser_anime.png: 5열 x 2행, 읽는 순서가 1~10프레임.
+# raser_anime.png: 5열 x 2행 시트 (칸 폭 약 434px). 10칸이 1~10프레임이다.
+# 칸을 그냥 화면 중앙에 그리면 프레임마다 빔의 오른쪽 끝이 달라 시작점이 흔들린다.
+# 각 프레임의 가장 오른쪽 알파 픽셀을 화면 오른쪽 끝에 고정해서 그린다.
 # 1~3은 빠르게, 4~8은 느리게, 9~10은 다시 느리게 흐른다.
-# 전체 합이 LASER_ACTIVE_TIME(2초)과 같아 기존 발사 시간을 그대로 유지한다.
+# 전체 합이 LASER_ACTIVE_TIME(1초)과 같다.
 LASER_COLS = 5
 LASER_ROWS = 2
 LASER_FRAME_TIMES = (
-    0.08, 0.08, 0.08,                    # 1~3프레임: 빠르게 (0.24초)
-    0.22, 0.22, 0.22, 0.22, 0.22,        # 4~8프레임: 느리게 (1.10초)
-    0.33, 0.33,                          # 9~10프레임: 다시 느리게 (0.66초)
+    0.04, 0.04, 0.04,                    # 1~3프레임: 빠르게 (0.12초)
+    0.11, 0.11, 0.11, 0.11, 0.11,        # 4~8프레임: 느리게 (0.55초)
+    0.165, 0.165,                        # 9~10프레임: 다시 느리게 (0.33초)
 )
-# 각 프레임 그림 중심의 칸 아래쪽으로부터의 거리(원본 px).
-# 칸 전체를 화면 폭으로 늘릴 때 빔이 지면 높이에 오도록 보정한다.
-LASER_FRAME_CENTERS = (138, 141, 135, 139, 136,
-                       172, 170, 172, 178, 182)
+# 각 프레임에서 칸 왼쪽 기준 가장 오른쪽 보이는 픽셀(알파 > 128)의 위치.
+LASER_FRAME_RIGHT_OFFSETS = (381, 434, 433, 434, 418,
+                             422, 422, 406, 434, 418)
+# 각 프레임의 알파 가중 중심(원본 px, 칸 아래쪽 기준).
+LASER_FRAME_CENTERS = (139, 143, 137, 136, 135,
+                       169, 170, 170, 173, 172)
+# 절반으로 줄인 레이저 셀의 화면 세로 길이 (가로는 화면 전체).
+LASER_CELL_DRAW_HEIGHT = 534.0
+# 레이저 그림만 고정으로 위로 올려 그린다. 피격 판정 높이는 그대로 유지.
+LASER_DRAW_Y_OFFSET = 24.0
 
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",
@@ -616,14 +624,20 @@ class BossPattern:
             top = int(round(row * _laser_sheet.h / LASER_ROWS))
             bottom = int(round((row + 1) * _laser_sheet.h / LASER_ROWS))
             cell_w, cell_h = right - left, bottom - top
-            scale = SCREEN_WIDTH / cell_w
-            # 빔 중심이 지면/발판 높이(laser["y"])에 오도록 칸 중심을 보정한다.
-            center_y = (laser["y"]
-                        + (cell_h * 0.5 - LASER_FRAME_CENTERS[frame]) * scale)
+            scale_x = SCREEN_WIDTH / cell_w
+            scale_y = LASER_CELL_DRAW_HEIGHT / cell_h
+            # 프레임마다 빔의 오른쪽 끝을 화면 오른쪽에 고정한다.
+            # 왼쪽 시작점은 빔 길이에 따라 자연스럽게 늘어나고 줄어든다.
+            dest_left = (SCREEN_WIDTH + shake_x
+                         - LASER_FRAME_RIGHT_OFFSETS[frame] * scale_x)
+            dest_center_x = dest_left + SCREEN_WIDTH * 0.5
+            # 피격 판정(laser["y"])은 건드리지 않고 그림 위치만 고정으로 올린다.
+            center_y = (laser["y"] + LASER_DRAW_Y_OFFSET
+                        + (cell_h * 0.5 - LASER_FRAME_CENTERS[frame]) * scale_y)
             _laser_sheet.clip_composite_draw(
                 left, _laser_sheet.h - bottom, cell_w, cell_h, 0.0, "",
-                SCREEN_WIDTH * 0.5 + shake_x, center_y,
-                SCREEN_WIDTH, cell_h * scale)
+                dest_center_x, center_y,
+                SCREEN_WIDTH, LASER_CELL_DRAW_HEIGHT)
 
     def draw(self, art, camera_x, shake_x):
         global _stone_image
