@@ -974,6 +974,7 @@ class Game:
         self.time = 0.0
         self.play_time = 0.0
         self.camera = 0.0
+        self.camera_follow = "girl"  # "boss" 이면 보스를 따라간다
         self.shake = 0.0
         self.shake_x = 0.0
 
@@ -1055,6 +1056,8 @@ class Game:
                 self.state = "skill_unlock"
                 self.pending_skill_unlock = False
         self.play_time = 0.0
+        self.camera = 0.0
+        self.camera_follow = "girl"
         self.intro_time = 0.0
         self.intro_mode = "title"
         self.camera = 0.0
@@ -1511,8 +1514,14 @@ class Game:
         if self.dev_no_cooldown:
             self.girl.dash_cooldown = 0.0
 
-        # 카메라
-        target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0, self.world.world_w - WIDTH)
+        # 카메라: 보스 연출 중에는 보스를, 그 외에는 캐릭터를 따라간다.
+        if self.camera_follow == "boss" and self.world.boss is not None:
+            focus = self.world.boss.x
+            target = clamp(focus - WIDTH * 0.5, 0,
+                           self.world.world_w - WIDTH)
+        else:
+            target = clamp(self.girl.focus_x() - WIDTH * 0.42, 0,
+                           self.world.world_w - WIDTH)
         self.camera += (target - self.camera) * min(1.0, dt * 7.0)
 
         # 착지/점프/달리기 먼지

@@ -59,6 +59,9 @@ ROCK_FALL_TIME = 0.6
 ROCK_STUN_TIME = 5.0
 PHASE2_FLOAT_HEIGHT = 190.0  # Skill1 로 떠오를 높이
 PHASE2_ANIM_TIME = RISING_TIME  # 일어나는 애니메이션이 끝날 때까지 유지
+PHASE2_MOVE_SPEED = 260.0  # 2페이즈 시작 시 오른쪽 끝까지 걷는 속도
+SCREEN_WIDTH = 1280.0  # Skill2 중 캐릭터를 가둘 화면 폭
+SCREEN_MARGIN = 24.0
 SKILL1_DURATION = BOSS_SPRITES["skill1"].duration
 SKILL2_DURATION = BOSS_SPRITES["skill2"].duration
 DEADSHOT_SPEED = 1400.0
@@ -66,7 +69,7 @@ DEADSHOT_SPEED = 1400.0
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",
               "rock_stun", "rock_stun_down", "phase2",
-              "phase2_skill1", "phase2_skill2")
+              "phase2_move_right", "phase2_skill1", "phase2_skill2")
 
 
 class BossPattern:
@@ -95,6 +98,7 @@ class BossPattern:
         self.handled_bombs = set()
         self.rock = None
         self.deadshot = None
+        self.move_target_x = 0.0  # 2페이즈 오른쪽 끝 이동 목표
         self.gimmick_done = False  # 기믹 완료 후 HP 67이어도 재시작하지 않는다
 
     # ------------------------------------------------------------------
@@ -435,18 +439,41 @@ class BossPattern:
             if notify is not None:
                 notify()
 
-    def _begin_phase2_skills(self):
-        """Skill1 로 떠오르기 시작한다."""
-        self.boss.hovering = True
+    def _begin_phase2_move(self):
+        """보스가 오른쪽 끝으로 걸어가고 카메라가 보스를 따라간다."""
+        self.boss.hovering = True  # 자동 추적 이동을 막고 무적도 유지한다
         self.boss.float_offset = 0.0
+        self.boss.facing = 1
+        self.move_target_x = self.boss.right - self.boss.width * 0.5
+        self.game.camera_follow = "boss"
         self._clear_attack()
-        self.boss.play_attack("skill1")
-        self._enter("phase2_skill1")
+        self._enter("phase2_move_right")
 
     def _state_phase2(self, dt):
         self.boss.phase_state = 2
         if self.time >= PHASE2_ANIM_TIME:
-            self._begin_phase2_skills()
+            self._begin_phase2_move()
+
+    def _state_phase2_move_right(self, dt):
+        """오른쪽 끝에 닿으면 곧바로 Skill1 로 떠오른다."""
+        boss = self.boss
+        if boss.x < self.move_target_x:
+            boss.x = min(self.move_target_x,
+                         boss.x + PHASE2_MOVE_SPEED * dt)
+            boss.walking = True
+            boss.facing = 1
+            return
+        boss.walking = False
+        self._begin_phase2_skills()
+
+    def _begin_phase2_skills(self):
+        """오른쪽 끝에서 왼쪽을 바라보며 Skill1 로 떠오르기 시작한다."""
+        self.boss.hovering = True
+        self.boss.facing = -1
+        self.boss.float_offset = 0.0
+        self._clear_attack()
+        self.boss.play_attack("skill1")
+        self._enter("phase2_skill1")
 
     def _state_phase2_skill1(self, dt):
         """Skill1 모션과 함께 공중으로 떠오른다."""
@@ -460,8 +487,14 @@ class BossPattern:
             self._enter("phase2_skill2")
 
     def _state_phase2_skill2(self, dt):
-        """Skill2 애니메이션을 계속 반복한다."""
+        """Skill2 애니메이션을 계속 반복한다. 카메라는 보스에 고정된다."""
         self.boss.float_offset = PHASE2_FLOAT_HEIGHT
+        self.game.camera_follow = "boss"
+        # 캐릭터가 보스가 비친 화면 밖으로 나가지 못하게 가둔다.
+        girl = self.game.girl
+        left = self.game.camera + SCREEN_MARGIN
+        right = self.game.camera + SCREEN_WIDTH - SCREEN_MARGIN
+        girl.x = max(left, min(right, girl.x))
         if self.boss.attack_t is None:
             self._clear_attack()
             self.boss.play_attack("skill2")
