@@ -99,7 +99,7 @@ LASER_FRAME_CENTERS = (139, 143, 137, 136, 135,
 # 절반으로 줄인 레이저 셀의 화면 세로 길이 (가로는 화면 전체).
 LASER_CELL_DRAW_HEIGHT = 534.0
 # 레이저 그림만 고정으로 위로 올려 그린다. 피격 판정 높이는 그대로 유지.
-LASER_DRAW_Y_OFFSET = 24.0
+LASER_DRAW_Y_OFFSET = 64.0
 
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",

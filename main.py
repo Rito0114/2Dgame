@@ -628,9 +628,23 @@ class World:
         )
 
     def _place_furniture(self, bench_count, box_count):
-        """벤치와 상자를 땅 구간 위에 겹치지 않게 랜덤으로 놓는다."""
+        """보스전은 고정 배치, 나머지 스테이지는 랜덤으로 가구를 놓는다."""
         box_half = Box(STAND_Y, self.spec.box_file).size() * 0.5
         bench_half = Bench(self.spec.bench_file).size() * 0.5
+
+        if self.spec.boss:
+            # 보스전: 상자는 맵 중앙, 벤치는 그 왼쪽에 딱 붙여 고정한다.
+            left, right = self.ground_spans[0]
+            box_cx = (left + right) * 0.5
+            bench_cx = box_cx - box_half - bench_half - FURNITURE_GAP
+            if box_count:
+                self.furniture.append(
+                    ("high", Box(STAND_Y, self.spec.box_file), box_cx))
+            if bench_count:
+                self.furniture.append(
+                    ("low", Bench(self.spec.bench_file), bench_cx))
+            return
+
         placed = []  # (중심 x, 반폭)
 
         def free(cx, half):
