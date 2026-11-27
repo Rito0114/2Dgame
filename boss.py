@@ -19,6 +19,8 @@ BOSS_SCALE = 1.0
 BOSS_WIDTH = Girl.HITBOX_W
 BOSS_HEIGHT = Girl.HITBOX_H
 BOSS_HP = 100  # 보스 최대 체력
+BASIC_ATTACK_DAMAGE = 2  # 기본 공격(펀치, 밟기) 데미지
+SKILL_ATTACK_DAMAGE = 8  # 스킬(대시) 공격 데미지
 # 페이즈 구간: 1페이즈 100~67, 2페이즈 66~34, 3페이즈 33~0
 PHASE_HP_RANGES = ((100, 67), (66, 34), (33, 0))
 PHASE_MIN_HP = (67, 34)  # 각 페이즈를 유지하는 최소 체력
@@ -127,12 +129,12 @@ class Boss:
             self.attack_index += 1
         self.attack_hold = 0.1
 
-    def hurt(self):
-        """한 번 맞으면 체력이 1 줄고, 0이 되면 쓰러진다."""
+    def hurt(self, damage=BASIC_ATTACK_DAMAGE):
+        """damage 만큼 체력이 줄고, 0이 되면 쓰러진다."""
         if not self.alive or self.hit_cooldown > 0.0:
             return False
         self.hit_cooldown = 0.4
-        self.hp = max(0, self.hp - 1)
+        self.hp = max(0, self.hp - damage)
         self.flash = FLASH_TIME
         self.hit_time = HIT_TIME
         if self.hp == 0:

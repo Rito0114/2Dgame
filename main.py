@@ -24,7 +24,8 @@ from girl import Girl
 from stage1 import SPEC as STAGE1_SPEC
 from stage2 import SPEC as STAGE2_SPEC
 from stage3 import SPEC as STAGE3_SPEC
-from boss import Boss, PHASE_HP_RANGES
+from boss import (BASIC_ATTACK_DAMAGE, Boss, PHASE_HP_RANGES,
+                  SKILL_ATTACK_DAMAGE)
 from item import Coin, HeartPickup, coin_image
 from lamp import Lamp
 from lobby import Lobby
@@ -1618,7 +1619,7 @@ class Game:
         if (boss is not None and boss.alive
                 and boss.last_attack != self.girl.attack_id
                 and overlaps(*hitbox, *boss.rect())):
-            if boss.hurt():
+            if boss.hurt(BASIC_ATTACK_DAMAGE):
                 self.score += 100
                 self.shake = max(self.shake, 6.0)
                 self.burst(boss.x, boss.y + boss.height * 0.55,
@@ -1716,7 +1717,9 @@ class Game:
                     and self.girl.y <= by + bh + 34
                 )
                 if self.girl.dash_timer > 0.0 or stomp:
-                    if boss.hurt():
+                    damage = (SKILL_ATTACK_DAMAGE if self.girl.dash_timer > 0.0
+                              else BASIC_ATTACK_DAMAGE)
+                    if boss.hurt(damage):
                         self.sfx.play("punch_sound.mp3", 0.4)
                         self.shake = max(self.shake, 6.0)
                         self.burst(boss.x, boss.y + boss.height * 0.55,
