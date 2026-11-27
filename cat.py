@@ -9,6 +9,7 @@
 시트마다 그림의 크기가 다르므로, 서 있을 때의 키가 걷기와 같도록 배율을 따로 둔다.
 """
 
+import math
 import os
 
 import pico2d
@@ -124,8 +125,8 @@ class Bullet:
         self.facing = facing
         self.vx = facing * BULLET_SPEED if vx is None else vx
         self.vy = 0.0 if vy is None else vy
-        # 기존 그림은 좌우 반전만으로 방향을 표현하므로 회전은 쓰지 않는다.
-        self.angle = 0.0
+        # 날아가는 방향(속도 벡터)으로 그림을 회전한다.
+        self.angle = math.atan2(self.vy, self.vx)
         self.life = BULLET_LIFE
         self.alive = True
 
@@ -145,11 +146,11 @@ class Bullet:
         if _bullet_image is None:
             _bullet_image = pico2d.load_image(BULLET_FILE)
         sheet = _bullet_image
-        # 총알 머리가 (x, y) 에 오도록 그림 가운데를 옮긴다. 뒤집히면 방향도 반대다.
+        # 총알 머리가 (x, y) 에 오하도록 그림 가운데를 회전만큼 되돌린다.
         offset = (BULLET_TIP_X - BULLET_CENTER_X) * BULLET_SCALE
-        center_x = self.x - camera_x + shake_x - self.facing * offset
-        flip = "h" if self.facing < 0 else ""
+        center_x = self.x - camera_x + shake_x - math.cos(self.angle) * offset
+        center_y = self.y - math.sin(self.angle) * offset
         sheet.clip_composite_draw(
-            0, 0, sheet.w, sheet.h, self.angle, flip,
-            center_x, self.y, sheet.w * BULLET_SCALE, sheet.h * BULLET_SCALE,
+            0, 0, sheet.w, sheet.h, self.angle, "",
+            center_x, center_y, sheet.w * BULLET_SCALE, sheet.h * BULLET_SCALE,
         )

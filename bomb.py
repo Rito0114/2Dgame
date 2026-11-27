@@ -6,6 +6,7 @@
 - 닿는 순간 그 타원 안에 있던 주인공은 피해를 입는다.
 """
 
+import math
 import os
 import random
 
@@ -14,6 +15,9 @@ import pico2d
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BOMB_FILE = os.path.join(BASE_DIR, "sprites", "object", "bomb.png")
 BOMB_SCALE = 0.12  # 원본 1024x1536 을 화면 크기로 줄이는 배율
+# 보스가 던지는 수류탄. 스테이지2 폭탄(bomb.png) 대신 이 그림을 쓴다.
+GRENADE_FILE = os.path.join(BASE_DIR, "sprites", "object", "grenade.png")
+GRENADE_SCALE = 0.08
 
 EFFECT_FILE = os.path.join(BASE_DIR, "sprites", "object", "bomb_effect.png")
 EFFECT_COLS = 5  # 효과 그림은 가로 5칸 x 세로 2칸 = 10프레임 시트다
@@ -48,6 +52,7 @@ SPAWN_INTERVAL = 10.0  # 폭탄이 떨어지는 간격(초)
 SCREEN_W = 1280  # 화면 가로(px). 폭탄은 플레이어 화면 안에 떨어진다.
 
 _image = None
+_grenade_image_cache = None
 _effect_tex = None
 
 
@@ -58,6 +63,13 @@ def _bomb_image():
     return _image
 
 
+def _grenade_image():
+    global _grenade_image_cache
+    if _grenade_image_cache is None:
+        _grenade_image_cache = pico2d.load_image(GRENADE_FILE)
+    return _grenade_image_cache
+
+
 def _effect_image():
     global _effect_tex
     if _effect_tex is None:
@@ -66,12 +78,16 @@ def _effect_image():
 
 
 class Bomb:
-    def __init__(self, x, ground_y, sky_y):
+    def __init__(self, x, ground_y, sky_y, image_kind="bomb",
+                 throw_from=None):
         self.x = x
         self.ground_y = ground_y
         self.sky_y = sky_y
         self.t = 0.0
         self.exploded = False
+        # "grenade" 이면 스테이지2 폭탄 대신 보스가 던진 수류탄으로 그린다.
+        self.image_kind = image_kind
+        self.throw_from = throw_from  # (시작 x, 시작 y). 주어지면 포물선으로 날아간다.
 
     @property
     def landed(self):
@@ -116,6 +132,9 @@ class Bomb:
     def draw(self, camera_x, shake_x=0.0):
         if self.exploded or not self.dropping():
             return
+        if self.image_kind == "grenade":
+            self._draw_grenade(camera_x, shake_x)
+            return
         image = _bomb_image()
         w = image.w * BOMB_SCALE
         h = image.h * BOMB_SCALE
@@ -124,6 +143,27 @@ class Bomb:
         cy = self.y() + h * 0.5
         image.clip_composite_draw(0, 0, image.w, image.h, 0.0, "",
                                   cx, cy, w, h)
+
+    def _draw_grenade(self, camera_x, shake_x):
+        """보스가 던진 수류탄: 착탄 지점은 고정, 그림은 포물선을 그리며 날아간다."""
+        image = _grenade_image()
+        scale = GRENADE_SCALE
+        progress = min(1.0, max(0.0, (self.t - DROP_START) / FALL_TIME))
+        if self.throw_from is not None:
+            sx, sy = self.throw_from
+            x = sx + (self.x - sx) * progress
+            y = sy + (self.ground_y - sy) * progress
+            y += math.sin(progress * math.pi) * 180.0
+        else:
+            x, y = self.x, self.y()
+        # 원본 1920x1080 에서 수류탄 내용 중심은 약 (948, 594) 이므로 보정한다.
+        content_cx, content_cy = 948.0, 594.0
+        cx = x - camera_x + shake_x - (content_cx - image.w * 0.5) * scale
+        cy = y - (content_cy - image.h * 0.5) * scale
+        image.clip_composite_draw(
+            0, 0, image.w, image.h, -math.radians(8.0) * progress, "",
+            cx, cy, image.w * scale, image.h * scale,
+        )
 
 
 class Blast:

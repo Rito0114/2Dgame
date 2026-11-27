@@ -17,6 +17,7 @@ import os
 
 import pico2d
 
+from boss import RISING_TIME
 from bomb import Bomb, ELLIPSE_W
 from cat import Bullet
 
@@ -33,8 +34,8 @@ MELEE_ANIM_TIME = 0.8
 RANGED_COOLDOWN = 5.0
 RANGED_SHOTS = (2, 1, 3)
 RANGED_GAP = (1.0, 0.5)
+RANGED_BULLET_GAP = 0.5  # 한 발씩 쏘고 다음 발까지의 간격
 FIRE_ANIM_TIME = 0.8
-RANGED_TOTAL = 3 * FIRE_ANIM_TIME + sum(RANGED_GAP)
 BULLET_SPEED = 460.0
 MUZZLE_DX = 88.0
 MUZZLE_DY_RATIO = 0.62
@@ -54,7 +55,7 @@ AIM_TRACK_TIME = 2.0
 AIM_LOCK_BEFORE = 1.0
 ROCK_FALL_TIME = 0.6
 ROCK_STUN_TIME = 5.0
-PHASE2_ANIM_TIME = 0.9
+PHASE2_ANIM_TIME = RISING_TIME  # 일어나는 애니메이션이 끝날 때까지 유지
 DEADSHOT_SPEED = 1400.0
 
 BOMB_MARGIN = ELLIPSE_W * 0.5
@@ -74,7 +75,10 @@ class BossPattern:
         self.ranged_cooldown = RANGED_COOLDOWN
         self.downtime_timer = DOWNTIME_INTERVAL
 
-        self._ranged_fired = 0
+        self.ranged_volley = 0
+        self.ranged_queue = 0
+        self.next_bullet_t = 0.0
+        self.last_shot_t = 0.0
         self._melee_hit_done = False
         self.volley = 0
         self.aim_pos = None
@@ -110,14 +114,25 @@ class BossPattern:
         return (self.boss.x + self.boss.facing * MUZZLE_DX,
                 self.boss.y + self.boss.height * MUZZLE_DY_RATIO)
 
-    def _shoot(self, count):
+    def _fire_one(self):
+        """지금 이 순간의 캐릭터 위치를 향해 총알 한 발을 발사한다."""
         girl = self.game.girl
         sx, sy = self._muzzle()
-        for i in range(count):
-            tx = girl.focus_x() + (i - (count - 1) * 0.5) * 18.0
-            ty = girl.y + girl.HITBOX_H * 0.55
-            self.game.bullets.append(self._aimed_bullet(sx, sy, tx, ty))
+        tx = girl.focus_x()
+        ty = girl.y + girl.HITBOX_H * 0.55
+        self.game.bullets.append(self._aimed_bullet(sx, sy, tx, ty))
+        self.last_shot_t = self.time
         self.game.sfx.play("gunfire_sound.mp3", 0.5)
+
+    def _start_volley(self, index):
+        """Boss_Fire 한 번 재생 후 첫 발을 쏘고, 나머지는 0.5초 간격으로 예약한다."""
+        self.ranged_volley = index
+        self.ranged_queue = RANGED_SHOTS[index] - 1
+        self.next_bullet_t = self.time + RANGED_BULLET_GAP
+        self._clear_attack()  # 이전 차례 애니메이션이 남아 있어도 새 모션을 재생
+        self._face_girl()
+        self.boss.play_attack("fire")
+        self._fire_one()
 
     def _aimed_bullet(self, sx, sy, tx, ty, speed=BULLET_SPEED):
         dx, dy = tx - sx, ty - sy
@@ -131,17 +146,25 @@ class BossPattern:
         return max(camera + BOMB_MARGIN,
                    min(camera + 1280 - BOMB_MARGIN, x))
 
+    def _throw_origin(self):
+        """수류탄이 손을 떠나는 위치."""
+        sx, sy = self._muzzle()
+        return (sx, sy + 40.0)
+
     def _throw(self, count):
         girl = self.game.girl
+        origin = self._throw_origin()
         for i in range(count):
             x = girl.focus_x() + (i - (count - 1) * 0.5) * 120.0
-            bomb = Bomb(self._clamp_x(x), self.ground_y, self.sky_y)
+            bomb = Bomb(self._clamp_x(x), self.ground_y, self.sky_y,
+                        image_kind="grenade", throw_from=origin)
             bomb.boss_pattern = True  # 기본 폭탄 피격 처리를 건너뛴다.
             self.game.bombs.bombs.append(bomb)
         self.game.sfx.play("bomb_sound.mp3", 0.35)
 
     def _throw_at(self, x):
-        bomb = Bomb(x, self.ground_y, self.sky_y)
+        bomb = Bomb(x, self.ground_y, self.sky_y,
+                    image_kind="grenade", throw_from=self._throw_origin())
         bomb.boss_pattern = True
         self.game.bombs.bombs.append(bomb)
         self.last_bomb = bomb
@@ -195,6 +218,7 @@ class BossPattern:
         self.boss.stunned = False
         self.boss.stun_sheet = None
         self.boss.anim_time = 0.0
+        self.boss.rise_time = 0.0  # Boss_Rising 으로 일어난다
         self.downtime_timer = DOWNTIME_INTERVAL
         self._enter("idle")
 
@@ -266,11 +290,8 @@ class BossPattern:
             return
         if self.ranged_cooldown <= 0.0:
             self.ranged_cooldown = RANGED_COOLDOWN
-            self._ranged_fired = 0
-            self._face_girl()
-            self.boss.play_attack("fire")
-            self._shoot(RANGED_SHOTS[0])
             self._enter("ranged")
+            self._start_volley(0)
 
     def _state_melee(self, dt):
         if not self._melee_hit_done and self.time >= MELEE_STRIKE_TIME \
@@ -290,23 +311,22 @@ class BossPattern:
             self._enter("idle")
 
     def _state_ranged(self, dt):
-        if self._ranged_fired == 0 and \
-                self.time >= FIRE_ANIM_TIME + RANGED_GAP[0]:
+        # 남은 발을 0.5초 간격으로 한 발씩 발사한다.
+        if self.ranged_queue > 0 and self.time >= self.next_bullet_t:
+            self._fire_one()
+            self.ranged_queue -= 1
+            self.next_bullet_t += RANGED_BULLET_GAP
+        if self.ranged_queue > 0:
+            return
+        # 현재 차례가 끝나면 정해진 대기 후 다음 차례로 넘어간다.
+        gap = RANGED_GAP[self.ranged_volley] \
+            if self.ranged_volley < len(RANGED_GAP) else FIRE_ANIM_TIME
+        if self.time < self.last_shot_t + gap:
+            return
+        if self.ranged_volley < len(RANGED_SHOTS) - 1:
+            self._start_volley(self.ranged_volley + 1)
+        else:
             self._clear_attack()
-            self._face_girl()
-            self.boss.play_attack("fire")
-            self._shoot(RANGED_SHOTS[1])
-            self._ranged_fired = 1
-        elif self._ranged_fired == 1 and \
-                self.time >= 2 * FIRE_ANIM_TIME + sum(RANGED_GAP):
-            self._clear_attack()
-            self._face_girl()
-            self.boss.play_attack("fire")
-            self._shoot(RANGED_SHOTS[2])
-            self._ranged_fired = 2
-        if self.time >= RANGED_TOTAL:
-            self._clear_attack()
-            self._ranged_fired = 0
             self._enter("idle")
 
     def _state_downtime(self, dt):
@@ -380,6 +400,7 @@ class BossPattern:
             self.boss.stunned = False
             self.boss.stun_sheet = None
             self.boss.anim_time = 0.0
+            self.boss.rise_time = 0.0  # Boss_Rising 으로 일어난다
             self.boss.phase_state = 2
             self.boss.hp_locked = False
             self.gimmick_done = True
