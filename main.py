@@ -2090,6 +2090,9 @@ class Game:
         for enemy in self.world.enemies:
             enemy.draw(cam, self.time, shake)
         self.bombs.draw(cam, shake)
+        # 레이저는 경고/발사 모두 보스보다 아래 레이어에 그려야 한다.
+        if self.boss_pattern is not None:
+            self.boss_pattern.draw_lasers(cam, shake)
         if self.world.boss is not None:
             self.world.boss.draw(art(), cam, shake)
         if self.boss_pattern is not None:

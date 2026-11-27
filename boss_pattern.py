@@ -25,9 +25,10 @@ from cat import Bullet
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STONE_FILE = os.path.join(BASE_DIR, "sprites", "object", "stone.png")
-LASER_FILE = os.path.join(BASE_DIR, "sprites", "object", "raser.png")
+LASER_ANIME_FILE = os.path.join(BASE_DIR, "sprites", "object",
+                                "raser_anime.png")
 _stone_image = None
-_laser_image = None
+_laser_sheet = None
 
 # ---------------------------------------------------------------------------
 # 1페이즈 기본 공격
@@ -76,6 +77,21 @@ LASER_WARN_TIME = 2.0  # 미리 경고를 띄우는 시간
 LASER_ACTIVE_TIME = 2.0  # 레이저 유지 시간
 LASER_HIT_HEIGHT = 40.0  # 피격 판정 높이
 LASER_WARN_COLOR = (235, 40, 40)
+
+# raser_anime.png: 5열 x 2행, 읽는 순서가 1~10프레임.
+# 1~3은 빠르게, 4~8은 느리게, 9~10은 다시 느리게 흐른다.
+# 전체 합이 LASER_ACTIVE_TIME(2초)과 같아 기존 발사 시간을 그대로 유지한다.
+LASER_COLS = 5
+LASER_ROWS = 2
+LASER_FRAME_TIMES = (
+    0.08, 0.08, 0.08,                    # 1~3프레임: 빠르게 (0.24초)
+    0.22, 0.22, 0.22, 0.22, 0.22,        # 4~8프레임: 느리게 (1.10초)
+    0.33, 0.33,                          # 9~10프레임: 다시 느리게 (0.66초)
+)
+# 각 프레임 그림 중심의 칸 아래쪽으로부터의 거리(원본 px).
+# 칸 전체를 화면 폭으로 늘릴 때 빔이 지면 높이에 오도록 보정한다.
+LASER_FRAME_CENTERS = (138, 141, 135, 139, 136,
+                       172, 170, 172, 178, 182)
 
 BOMB_MARGIN = ELLIPSE_W * 0.5
 AIM_STATES = ("gimmick_start", "grenade", "aimed_grenade",
@@ -513,6 +529,16 @@ class BossPattern:
                 break
         return heights
 
+    @staticmethod
+    def _laser_frame(t):
+        """발사 경과 시간을 0~9 프레임 번호로 바꾼다."""
+        elapsed = 0.0
+        for index, duration in enumerate(LASER_FRAME_TIMES):
+            elapsed += duration
+            if t < elapsed:
+                return index
+        return len(LASER_FRAME_TIMES) - 1
+
     def _spawn_laser(self):
         self.lasers.append({
             "t": 0.0,
@@ -562,6 +588,43 @@ class BossPattern:
     # ------------------------------------------------------------------
     # 그리기
     # ------------------------------------------------------------------
+    def draw_lasers(self, camera_x, shake_x):
+        """레이저는 항상 보스보다 아래 레이어에 그린다."""
+        global _laser_sheet
+        for laser in self.lasers:
+            t = laser["t"]
+            if t < LASER_WARN_TIME:
+                # 깜빡이는 빨간 사각형으로 2초 전에 미리 경고한다.
+                alpha = 110 if int(t * 8) % 2 == 0 else 55
+                pico2d.draw_rectangle(
+                    shake_x, laser["y"] - 22,
+                    SCREEN_WIDTH + shake_x, laser["y"] + 22,
+                    *LASER_WARN_COLOR, alpha, filled=True)
+                continue
+
+            active_t = t - LASER_WARN_TIME
+            if active_t < 0.0 or active_t >= LASER_ACTIVE_TIME:
+                continue
+            if _laser_sheet is None:
+                _laser_sheet = pico2d.load_image(LASER_ANIME_FILE)
+
+            frame = self._laser_frame(active_t)
+            col = frame % LASER_COLS
+            row = frame // LASER_COLS
+            left = int(round(col * _laser_sheet.w / LASER_COLS))
+            right = int(round((col + 1) * _laser_sheet.w / LASER_COLS))
+            top = int(round(row * _laser_sheet.h / LASER_ROWS))
+            bottom = int(round((row + 1) * _laser_sheet.h / LASER_ROWS))
+            cell_w, cell_h = right - left, bottom - top
+            scale = SCREEN_WIDTH / cell_w
+            # 빔 중심이 지면/발판 높이(laser["y"])에 오도록 칸 중심을 보정한다.
+            center_y = (laser["y"]
+                        + (cell_h * 0.5 - LASER_FRAME_CENTERS[frame]) * scale)
+            _laser_sheet.clip_composite_draw(
+                left, _laser_sheet.h - bottom, cell_w, cell_h, 0.0, "",
+                SCREEN_WIDTH * 0.5 + shake_x, center_y,
+                SCREEN_WIDTH, cell_h * scale)
+
     def draw(self, art, camera_x, shake_x):
         global _stone_image
         if self.rock is not None:
@@ -578,21 +641,4 @@ class BossPattern:
             x = self.aim_pos[0] - camera_x + shake_x
             art.blit(disc, x, self.aim_pos[1], ELLIPSE_W, 92, 200)
 
-        # Skill2 레이저: 경고(빨간 사각형) → raser.png 로 발사.
-        for laser in self.lasers:
-            t = laser["t"]
-            if t < LASER_WARN_TIME:
-                # 깜빡이는 빨간 사각형으로 2초 전에 미리 경고한다.
-                alpha = 110 if int(t * 8) % 2 == 0 else 55
-                pico2d.draw_rectangle(
-                    shake_x, laser["y"] - 22,
-                    SCREEN_WIDTH + shake_x, laser["y"] + 22,
-                    *LASER_WARN_COLOR, alpha, filled=True)
-                continue
-            if t >= LASER_WARN_TIME + LASER_ACTIVE_TIME:
-                continue
-            global _laser_image
-            if _laser_image is None:
-                _laser_image = pico2d.load_image(LASER_FILE)
-            art.blit(_laser_image, SCREEN_WIDTH * 0.5 + shake_x,
-                     laser["y"], SCREEN_WIDTH, 720)
+        # 레이저는 draw_lasers()에서 보스 아래 레이어로 그린다.
