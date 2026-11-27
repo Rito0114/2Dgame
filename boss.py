@@ -150,7 +150,9 @@ class Boss:
 
     def hurt(self, damage=BASIC_ATTACK_DAMAGE):
         """damage 만큼 체력이 줄고, 0이 되면 쓰러진다."""
-        if not self.alive or self.hp_locked or self.hit_cooldown > 0.0:
+        # 공중에 떠 있는 동안에는 무적이다.
+        if (not self.alive or self.hovering or self.hp_locked
+                or self.hit_cooldown > 0.0):
             return False
         self.hit_cooldown = 0.4
         self.hp = max(0, self.hp - damage)

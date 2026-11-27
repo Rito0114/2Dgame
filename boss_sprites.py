@@ -21,7 +21,7 @@ class BossSprite:
     """한 장의 애니메이션 시트."""
 
     def __init__(self, filename, cols, rows, frame_time, foot_pads,
-                 visible_height, mirror=False):
+                 visible_height, mirror=False, center_pads=None):
         self.path = os.path.join(SPRITE_DIR, filename)
         self.cols = cols
         self.rows = rows
@@ -34,6 +34,9 @@ class BossSprite:
         self.visible_height = float(visible_height)
         self.scale = PLAYER_VISIBLE_HEIGHT / self.visible_height
         self.mirror = mirror  # True 이면 다른 애니메이션과 좌우반전이 반대다
+        # 프레임별 그림 중심의 칸 중심 대비 가로 오프셋(원본 px).
+        # 프레임마다 그림이 칸 안에서 좌우로 밀려 보스가 흔들려 보이는 것을 막는다.
+        self.center_pads = center_pads
         self._image = None
 
     def image(self):
@@ -65,6 +68,10 @@ class BossSprite:
         center_x = x - camera_x + shake_x
         center_y = y - foot * draw_scale + height * draw_scale * 0.5
         flip = "h" if (facing < 0) != self.mirror else ""
+        if self.center_pads is not None:
+            offset = self.center_pads[frame] * draw_scale
+            # 좌우반전되면 그림 중심 오프셋의 부호도 뒤집힌다.
+            center_x += offset if flip else -offset
         self.image().clip_composite_draw(
             left, bottom, width, height, 0.0, flip,
             center_x, center_y, width * draw_scale, height * draw_scale,
@@ -103,10 +110,14 @@ BOSS_SPRITES = {
         (10, 13, 14, 14, 16, 15, 15, 15, 15, 15), 335),
     "skill1": BossSprite(
         "Boss_Skill1.png", 5, 2, 0.08,
-        (29, 30, 34, 38, 40, 36, 32, 28, 28, 29), 323),
+        (29, 30, 34, 38, 40, 36, 32, 28, 28, 29), 323,
+        center_pads=(-7.5, -3.0, -1.5, -3.0, -8.0,
+                     1.0, 1.5, -1.0, -4.5, -6.5)),
     "skill2": BossSprite(
         "Boss_Skill2.png", 5, 2, 0.08,
-        (24, 24, 28, 28, 30, 32, 29, 30, 27, 29), 327),
+        (24, 24, 28, 28, 30, 32, 29, 30, 27, 29), 327,
+        center_pads=(1.5, -4.0, -8.5, -16.5, -17.0,
+                     16.0, 6.0, -8.0, -20.0, -29.0)),
     "skill3": BossSprite(
         "Boss_Skill3.png", 5, 2, 0.08,
         (7, 7, 7, 10, 33, 38, 39, 39, 39, 38), 342),
