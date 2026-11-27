@@ -84,6 +84,7 @@ class BossPattern:
         self.handled_bombs = set()
         self.rock = None
         self.deadshot = None
+        self.gimmick_done = False  # 기믹 완료 후 HP 67이어도 재시작하지 않는다
 
     # ------------------------------------------------------------------
     # 공통 유틸
@@ -114,7 +115,7 @@ class BossPattern:
         sx, sy = self._muzzle()
         for i in range(count):
             tx = girl.focus_x() + (i - (count - 1) * 0.5) * 18.0
-            ty = girl.y + girl.height * 0.55
+            ty = girl.y + girl.HITBOX_H * 0.55
             self.game.bullets.append(self._aimed_bullet(sx, sy, tx, ty))
         self.game.sfx.play("gunfire_sound.mp3", 0.5)
 
@@ -158,7 +159,7 @@ class BossPattern:
         girl = self.game.girl
         sx, sy = self._muzzle()
         bullet = self._aimed_bullet(
-            sx, sy, girl.focus_x(), girl.y + girl.height * 0.5,
+            sx, sy, girl.focus_x(), girl.y + girl.HITBOX_H * 0.5,
             DEADSHOT_SPEED)
         bullet.kill_player = True
         self.deadshot = bullet
@@ -172,13 +173,14 @@ class BossPattern:
             self.deadshot = None
             if self.game.girl.state != "retire" and self.state == "aimed_grenade":
                 # 혹시 빗나가면 잠금을 풀고 기본 전투로 되돌린다.
+                self.gimmick_done = True
                 self.boss.hp_locked = False
                 self.aim_pos = None
                 self._enter("idle")
             return
         girl = self.game.girl
         dx = girl.focus_x() - self.deadshot.x
-        dy = girl.y + girl.height * 0.5 - self.deadshot.y
+        dy = girl.y + girl.HITBOX_H * 0.5 - self.deadshot.y
         length = max(1.0, math.hypot(dx, dy))
         self.deadshot.vx = dx / length * DEADSHOT_SPEED
         self.deadshot.vy = dy / length * DEADSHOT_SPEED
@@ -240,7 +242,8 @@ class BossPattern:
         self._update_deadshot(dt)
 
         # HP 67 이하 감지는 한 번만 진입한다.
-        if self.state not in AIM_STATES and boss.hp <= GIMMICK_HP:
+        if not self.gimmick_done and self.state not in AIM_STATES \
+                and boss.hp <= GIMMICK_HP:
             self._begin_gimmick()
 
         getattr(self, "_state_" + self.state)(dt)
@@ -379,6 +382,7 @@ class BossPattern:
             self.boss.anim_time = 0.0
             self.boss.phase_state = 2
             self.boss.hp_locked = False
+            self.gimmick_done = True
             self.downtime_timer = DOWNTIME_INTERVAL
             self.ranged_cooldown = RANGED_COOLDOWN
             self.melee_cooldown = MELEE_COOLDOWN
