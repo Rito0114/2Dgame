@@ -53,6 +53,7 @@ THROW_ANIM_TIME = 0.8
 VOLLEY_GAP = 1.6
 AIM_TRACK_TIME = 2.0
 AIM_LOCK_BEFORE = 1.0
+GRENADE_SHAKE = 10.0  # 수류탄 폭발 시 화면 흔들림 진폭
 ROCK_FALL_TIME = 0.6
 ROCK_STUN_TIME = 5.0
 PHASE2_ANIM_TIME = RISING_TIME  # 일어나는 애니메이션이 끝날 때까지 유지
@@ -81,6 +82,7 @@ class BossPattern:
         self.last_shot_t = 0.0
         self._melee_hit_done = False
         self.volley = 0
+        self.volley_shaken = False  # 한 차례(5발) 폭발당 한 번만 흔들린다
         self.aim_pos = None
         self.aim_x = 0.0
         self.last_bomb = None
@@ -210,7 +212,7 @@ class BossPattern:
 
     def _begin_downtime(self):
         self.boss.stunned = True
-        self.boss.stun_sheet = "retire"
+        self.boss.stun_sheet = "hurt"
         self._clear_attack()
         self._enter("downtime")
 
@@ -229,6 +231,7 @@ class BossPattern:
         self._clear_attack()
         self.downtime_timer = DOWNTIME_INTERVAL
         self.volley = 0
+        self.volley_shaken = False
         self.aim_pos = None
         self.last_bomb = None
         self.last_hit_handled = False
@@ -239,6 +242,7 @@ class BossPattern:
 
     def _next_volley(self):
         self.volley += 1
+        self.volley_shaken = False
         self._face_girl()
         self.boss.play_attack("throw")
         self._throw(VOLLEY_BOMBS)
@@ -246,14 +250,20 @@ class BossPattern:
 
     def on_bombs_landed(self, bombs):
         """일반 수류탄 착탄: 바닥 타원 안이면 공중 여부와 무관하게 피격."""
+        landed_any = False
         for bomb in bombs:
             if not getattr(bomb, "boss_pattern", False):
                 continue
             if bomb is self.last_bomb or bomb in self.handled_bombs:
                 continue
             self.handled_bombs.add(bomb)
+            landed_any = True
             if abs(self.game.girl.focus_x() - bomb.x) <= ELLIPSE_W * 0.5:
                 self._grenade_hit(bomb)
+        if landed_any and not self.volley_shaken:
+            # 한 차례에 5발이 동시에 터져도 화면 흔들림은 한 번만 준다.
+            self.volley_shaken = True
+            self.game.shake = max(self.game.shake, GRENADE_SHAKE)
 
     # ------------------------------------------------------------------
     # 상태 업데이트
@@ -345,6 +355,7 @@ class BossPattern:
             self._next_volley()
             return
         # 마지막 조준 수류탄.
+        self.volley_shaken = False  # 세 번째 차례 폭발과 별도로 한 번 흔들린다
         self._face_girl()
         self.boss.play_attack("throw")
         x = self._clamp_x(self.game.girl.focus_x())
@@ -365,6 +376,7 @@ class BossPattern:
         if not self.last_bomb.exploded:
             return
         self.last_hit_handled = True
+        self.game.shake = max(self.game.shake, GRENADE_SHAKE)
         # 마지막 수류탄도 착탄 타원 안에 있을 때만 체력이 깎인다.
         if abs(self.game.girl.focus_x() - self.last_bomb.x) <= ELLIPSE_W * 0.5:
             self._grenade_hit(self.last_bomb)

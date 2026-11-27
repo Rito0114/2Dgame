@@ -21,7 +21,7 @@ class BossSprite:
     """한 장의 애니메이션 시트."""
 
     def __init__(self, filename, cols, rows, frame_time, foot_pads,
-                 visible_height):
+                 visible_height, mirror=False):
         self.path = os.path.join(SPRITE_DIR, filename)
         self.cols = cols
         self.rows = rows
@@ -33,6 +33,7 @@ class BossSprite:
         # 프레임에서 가장 큰 보이는 높이를 주인공 높이에 맞춰 스케일을 보정한다.
         self.visible_height = float(visible_height)
         self.scale = PLAYER_VISIBLE_HEIGHT / self.visible_height
+        self.mirror = mirror  # True 이면 다른 애니메이션과 좌우반전이 반대다
         self._image = None
 
     def image(self):
@@ -63,7 +64,7 @@ class BossSprite:
         draw_scale = scale * self.scale
         center_x = x - camera_x + shake_x
         center_y = y - foot * draw_scale + height * draw_scale * 0.5
-        flip = "h" if facing < 0 else ""
+        flip = "h" if (facing < 0) != self.mirror else ""
         self.image().clip_composite_draw(
             left, bottom, width, height, 0.0, flip,
             center_x, center_y, width * draw_scale, height * draw_scale,
@@ -78,7 +79,7 @@ class BossSprite:
 BOSS_SPRITES = {
     "idle": BossSprite(
         "Boss_Idle.png", 5, 2, 0.12,
-        (41, 41, 41, 41, 41, 70, 70, 70, 71, 70), 340),
+        (41, 41, 41, 41, 41, 70, 70, 70, 71, 70), 340, mirror=True),
     "walk": BossSprite(
         "Boss_Walk.png", 4, 2, 0.10,
         (16, 18, 19, 18, 17, 16, 15, 14), 371),
@@ -88,6 +89,9 @@ BOSS_SPRITES = {
     "hit": BossSprite(
         "Boss_Hit.png", 5, 2, 0.06,
         (13, 13, 14, 18, 40, 20, 23, 22, 22, 18), 330),
+    "hurt": BossSprite(
+        "Boss_Hurt.png", 5, 2, 0.08,
+        (27, 27, 27, 27, 27, 26, 22, 23, 24, 26), 401),
     "fire": BossSprite(
         "Boss_Fire.png", 5, 2, 0.08,
         (27, 27, 27, 28, 28, 26, 26, 26, 25, 25), 312),

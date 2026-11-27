@@ -229,7 +229,7 @@ class Boss:
             else:
                 name, t = "retire2", self.death_time - retire.duration
         elif self.stunned:
-            name = self.stun_sheet or "retire"
+            name = self.stun_sheet or "hurt"
             t = min(self.anim_time, BOSS_SPRITES[name].duration - 0.01)
         elif self.hit_time > 0.0:
             name, t = "hit", HIT_TIME - self.hit_time
