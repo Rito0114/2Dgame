@@ -24,6 +24,8 @@ PILLAR_BOX = (694, 28, 1241, 1043)
 BROKEN_WALL_SCALE = 0.6  # 벽의 위쪽은 화면 안에 들어오게
 PILLAR_SCALE = 0.65  # 기둥 위쪽이 화면(720px) 위로 나가게
 PILLAR_COUNT = 4
+PILLAR_CONTENT_W = (PILLAR_BOX[2] - PILLAR_BOX[0]) * PILLAR_SCALE
+PILLAR_CONTENT_HALF = PILLAR_CONTENT_W * 0.5
 WALL_RIGHT_MARGIN = 100  # 맵 오른쪽 끝에서 벽 중심까지의 거리
 
 
@@ -48,6 +50,15 @@ class BossScenery:
         if self._pillar is None:
             self._pillar = pico2d.load_image(PILLAR_FILE)
         return self._pillar
+
+    def pillar_at(self, x, half_w=0.0):
+        """월드 x 가 기둥 그림 범위에 있으면 기둥 번호를, 없으면 None."""
+        step = self.world_w / PILLAR_COUNT
+        for i in range(PILLAR_COUNT):
+            cx = step * (i + 0.5)
+            if abs(x - cx) <= PILLAR_CONTENT_HALF + half_w:
+                return i
+        return None
 
     def draw(self, art, camera_x, shake_x=0.0):
         self._draw(art, self.wall, self.world_w - WALL_RIGHT_MARGIN,

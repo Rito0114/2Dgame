@@ -116,15 +116,22 @@ def muzzle(x, y, facing):
 
 
 class Bullet:
-    def __init__(self, x, y, facing):
+    # vx/vy 를 주면 보스처럼 목표를 향해 쏘는 총알로도 쓸 수 있다.
+    # 주지 않으면 기존 고양이 총알(수평 방향)과 완전히 같다.
+    def __init__(self, x, y, facing, vx=None, vy=None):
         self.x = x
         self.y = y
         self.facing = facing
+        self.vx = facing * BULLET_SPEED if vx is None else vx
+        self.vy = 0.0 if vy is None else vy
+        # 기존 그림은 좌우 반전만으로 방향을 표현하므로 회전은 쓰지 않는다.
+        self.angle = 0.0
         self.life = BULLET_LIFE
         self.alive = True
 
     def update(self, dt):
-        self.x += self.facing * BULLET_SPEED * dt
+        self.x += self.vx * dt
+        self.y += self.vy * dt
         self.life -= dt
         if self.life <= 0.0:
             self.alive = False
@@ -143,6 +150,6 @@ class Bullet:
         center_x = self.x - camera_x + shake_x - self.facing * offset
         flip = "h" if self.facing < 0 else ""
         sheet.clip_composite_draw(
-            0, 0, sheet.w, sheet.h, 0.0, flip,
+            0, 0, sheet.w, sheet.h, self.angle, flip,
             center_x, self.y, sheet.w * BULLET_SCALE, sheet.h * BULLET_SCALE,
         )

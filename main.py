@@ -39,6 +39,7 @@ from bench import Bench
 from box import Box
 from road import Road
 from scenery import BossScenery
+from boss_pattern import BossPattern
 import story
 
 WIDTH, HEIGHT = 1280, 720
@@ -963,6 +964,7 @@ class Game:
         self.story_images = {}
 
         self.state = "title"
+        self.boss_pattern = None
         self.pending_skill_unlock = False
         self.skill_popup_time = 0.0
         self.intro_mode = "title"
@@ -1026,6 +1028,9 @@ class Game:
         self.girl.invuln = 0.0  # 시작할 때 깜빡이지 않도록
         self.bombs = BombField(self.world.ground_spans, sky_y=HEIGHT + 60,
                                ground_y=STAND_Y, enabled=self.world.spec.bombs)
+        self.boss_pattern = (BossPattern(self.world.boss, self, STAND_Y,
+                                         HEIGHT + 60)
+                             if self.world.boss is not None else None)
         # 스킬 안내는 스테이지 2 오프닝(시나리오 → 타이틀)이 끝난 뒤에 띄운다.
         # 일반 클리어/개발자 이동 어느 경로로 들어와도 같게 표시한다.
         self.pending_skill_unlock = bool(
@@ -1519,6 +1524,8 @@ class Game:
         self._update_cats()
         self._update_bombs(dt)
         self._update_bullets(dt)
+        if self.boss_pattern is not None:
+            self.boss_pattern.update(dt)
 
         self._check_attack()
         self._check_coins()
@@ -1570,13 +1577,18 @@ class Game:
                 enemy.next_shot += CAT_SHOT_INTERVAL
 
     def _update_bombs(self, dt):
-        for bomb in self.bombs.update(dt, self.camera):
+        landed = self.bombs.update(dt, self.camera)
+        if self.boss_pattern is not None:
+            self.boss_pattern.on_bombs_landed(landed)
+        for bomb in landed:
             self.sfx.play("bomb_sound.mp3")
-            left, bottom, w, h = bomb.hit_rect()
-            if overlaps(*self.girl.rect(), left, bottom, w, h):
-                if self.girl.take_hit(bomb.x):
-                    self.sfx.play("female_deathsound.mp3")
-                    self.shake = max(self.shake, 11.0)
+            # 보스 수류탄은 바닥 타원 기준으로 따로 판정한다.
+            if not getattr(bomb, "boss_pattern", False):
+                left, bottom, w, h = bomb.hit_rect()
+                if overlaps(*self.girl.rect(), left, bottom, w, h):
+                    if self.girl.take_hit(bomb.x):
+                        self.sfx.play("female_deathsound.mp3")
+                        self.shake = max(self.shake, 11.0)
             self.burst(bomb.x, STAND_Y + 20, (255, 170, 90), 22, 320, 0.6, 5)
             self.shake = max(self.shake, 6.0)
 
@@ -1586,6 +1598,11 @@ class Game:
             bullet.update(dt)
             if bullet.alive and overlaps(*girl_rect, *bullet.rect()):
                 bullet.alive = False
+                if getattr(bullet, "kill_player", False):
+                    self.girl.die()
+                    self.sfx.play("female_deathsound.mp3")
+                    self.shake = max(self.shake, 18.0)
+                    continue
                 if self.girl.take_hit(bullet.x):
                     self.sfx.play("female_deathsound.mp3")
                     self.shake = max(self.shake, 11.0)
@@ -1733,16 +1750,8 @@ class Game:
                         self.girl.bounce(700.0)
                     if boss.defeated:
                         self._boss_defeated()
-                else:
-                    boss.touch()
-                    if self.girl.take_hit(boss.x):
-                        self.sfx.play("female_deathsound.mp3")
-                        self.shake = max(self.shake, 11.0)
-                        self.burst(self.girl.x, self.girl.y + 100,
-                                   (255, 120, 140), 16, 320, 0.6, 4)
-                        if self.girl.hp <= 0:
-                            self.shake = 18.0
-                            self.best_score = max(self.best_score, self.score)
+                # 보스 → 플레이어 피격은 패턴 상태 머신이 담당한다.
+                # (근접 모션 타이밍/기믹/딜타임 중 복합 판정 방지)
         for enemy in self.world.enemies:
             if not enemy.alive:
                 continue
@@ -2062,6 +2071,8 @@ class Game:
         self.bombs.draw(cam, shake)
         if self.world.boss is not None:
             self.world.boss.draw(art(), cam, shake)
+        if self.boss_pattern is not None:
+            self.boss_pattern.draw(art(), cam, shake)
 
         # 스킬 배경: 다른 레이어 위, 캐릭터 바로 아래
         self.skill_bg.draw(art(), WIDTH, HEIGHT)

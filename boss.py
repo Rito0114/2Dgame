@@ -71,6 +71,11 @@ class Boss:
         self.flash = 0.0
         self.hit_cooldown = 0.0  # 접촉 중 여러 번 맞는 것을 막는다
         self.last_attack = -1  # 같은 공격에 여러 번 맞지 않도록
+        self.phase_state = 1  # 체력과 별개로 진행되는 명시적 페이즈(기믹 후 2)
+        self.hp_locked = False  # 기믹 중에는 체력이 줄지 않는다
+        self.stunned = False  # 딜타임/낙석 기절 상태
+        self.stun_sheet = None  # 기절 중 재생할 시트 이름
+        self.current_attack = None  # 패턴이 직접 지정한 공격 시트 이름
         self.entry_target = 0.0  # 걸어와서 멈출 x
         self.entry_walking = False  # 화면 밖에서 걸어오는 중
         self.entry_idle = 0.0  # 걸어온 뒤 IDLE 로 멈춰 있는 남은 시간
@@ -81,8 +86,8 @@ class Boss:
 
     @property
     def phase(self):
-        """현재 체력에 해당하는 페이즈(1~3)."""
-        return phase_for_hp(self.hp)
+        """체력 기준 페이즈. 기믹 종료 후에는 2페이즈 이상을 유지한다."""
+        return max(phase_for_hp(self.hp), self.phase_state)
 
     @property
     def entry_done(self):
@@ -120,8 +125,20 @@ class Boss:
     def is_attacking(self):
         return self.attack_t is not None and self.attack_t < self.attack_duration
 
+    def play_attack(self, name):
+        """패턴이 지정한 공격 모션을 한 번 재생한다."""
+        if name not in BOSS_SPRITES or self.is_attacking():
+            return False
+        self.attack_t = 0.0
+        self.attack_duration = BOSS_SPRITES[name].duration
+        self.current_attack = name
+        self.attack_hold = 0.1
+        return True
+
     def touch(self):
         """플레이어와 닿았을 때 공격 모션을 한 번만 재생한다."""
+        if self.current_attack is not None:
+            return
         if self.attack_hold <= 0.0 and not self.is_attacking():
             self.attack_t = 0.0
             name = ATTACK_NAMES[self.attack_index % len(ATTACK_NAMES)]
@@ -131,7 +148,7 @@ class Boss:
 
     def hurt(self, damage=BASIC_ATTACK_DAMAGE):
         """damage 만큼 체력이 줄고, 0이 되면 쓰러진다."""
-        if not self.alive or self.hit_cooldown > 0.0:
+        if not self.alive or self.hp_locked or self.hit_cooldown > 0.0:
             return False
         self.hit_cooldown = 0.4
         self.hp = max(0, self.hp - damage)
@@ -182,6 +199,11 @@ class Boss:
             self.attack_t += dt
             if self.attack_t >= self.attack_duration:
                 self.attack_t = None
+                self.current_attack = None
+                self.attack_index += 1
+        if self.stunned:
+            self.walking = False
+            return
         # 공격/피격/등장 중에는 멈춰 서고, 그 외에는 플레이어 쪽으로 걷는다.
         old_x = self.x
         distance = player_x - self.x
@@ -206,10 +228,14 @@ class Boss:
                 name, t = "retire", self.death_time
             else:
                 name, t = "retire2", self.death_time - retire.duration
+        elif self.stunned:
+            name = self.stun_sheet or "retire"
+            t = min(self.anim_time, BOSS_SPRITES[name].duration - 0.01)
         elif self.hit_time > 0.0:
             name, t = "hit", HIT_TIME - self.hit_time
         elif self.is_attacking():
-            name, t = self._attack_name(), self.attack_t
+            name = self.current_attack or self._attack_name()
+            t = self.attack_t
         elif self.rise_time < RISING_TIME:
             name, t = "rising", self.rise_time
         elif self.walking:
